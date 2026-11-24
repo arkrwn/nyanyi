@@ -2,7 +2,10 @@
 
 Lightweight native macOS menu bar application that displays real-time synchronized lyrics for **Spotify** and **YouTube Music**, supporting **all languages** with automatic phonetic romanization for non-Latin scripts.
 
-Released under the [MIT License](LICENSE). Recreated and expanded from [lyricue](https://github.com/feryadialoi/lyricue).
+> **Acknowledgements & Inspiration**
+> Inspired by [lyricue](https://github.com/feryadialoi/lyricue) created by [@feryadialoi](https://github.com/feryadialoi). Huge appreciation to Feryadi Aloi for the original macOS overlay concept and design foundation.
+
+Released under the [MIT License](LICENSE).
 
 ---
 
@@ -106,6 +109,12 @@ nyanyi/
 └── Tests/NyanyiTests/
     └── NyanyiTests.swift                # Unit tests for multi-language phonetics, LRC parsing, & player parsers
 ```
+
+---
+
+## Credits & Appreciation
+
+This project is inspired by [**feryadialoi/lyricue**](https://github.com/feryadialoi/lyricue) by [**@feryadialoi**](https://github.com/feryadialoi). Special thanks and appreciation for building the original macOS live lyrics overlay that sparked **Nyanyi**.
 
 ---
 

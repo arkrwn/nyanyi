@@ -24,7 +24,6 @@ struct VisualEffectBackground: NSViewRepresentable {
 struct ContentView: View {
     @ObservedObject var viewModel: LyricsViewModel
     @ObservedObject var displaySettings: DisplaySettings
-    @State private var isHovering = false
 
     private var isCompact: Bool { displaySettings.mode == .corner }
 
@@ -44,11 +43,11 @@ struct ContentView: View {
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(Color.white.opacity(isHovering ? 0.18 : 0.08), lineWidth: 1)
+                .strokeBorder(Color.white.opacity(viewModel.isHovering ? 0.18 : 0.08), lineWidth: 1)
         )
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.2)) {
-                isHovering = hovering
+                viewModel.isHovering = hovering
             }
         }
     }

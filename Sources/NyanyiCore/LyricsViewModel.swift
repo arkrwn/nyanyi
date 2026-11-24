@@ -9,6 +9,7 @@ public final class LyricsViewModel: ObservableObject {
     @Published public var activeSourceName: String = ""
     @Published public var isLoading: Bool = false
     @Published public var isPlaying: Bool = false
+    @Published public var isHovering: Bool = false
 
     public let playerMonitor = PlayerMonitor()
     public let displaySettings = DisplaySettings()
@@ -80,15 +81,12 @@ public final class LyricsViewModel: ObservableObject {
         isLoading = true
 
         let phoneticMode = displaySettings.phoneticMode
-        fetchTask = Task { [weak self] in
+        fetchTask = Task { @MainActor [weak self] in
             let fetched = await LyricsService.shared.fetchLyrics(track: track, phoneticMode: phoneticMode)
-            guard !Task.isCancelled else { return }
-            await MainActor.run {
-                guard let self = self else { return }
-                self.lines = fetched
-                self.isLoading = false
-                self.updateActiveLine(for: self.playerMonitor.playerPosition)
-            }
+            guard !Task.isCancelled, let self = self else { return }
+            self.lines = fetched
+            self.isLoading = false
+            self.updateActiveLine(for: self.playerMonitor.playerPosition)
         }
     }
 

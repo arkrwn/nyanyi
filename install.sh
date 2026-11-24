@@ -24,13 +24,17 @@ git clone --depth 1 "${REPO}" "${TMP_DIR}/${APP_NAME}" 2>/dev/null
 
 echo "Building (this may take a moment)..."
 cd "${TMP_DIR}/${APP_NAME}"
-swift build -c release 2>&1 | tail -1
+swift build -c release
+BIN_PATH=$(swift build -c release --show-bin-path 2>/dev/null || echo ".build/release")
+if [ ! -f "${BIN_PATH}/${APP_NAME}" ]; then
+    BIN_PATH=".build/release"
+fi
 
 echo "Creating app bundle..."
 APP_BUNDLE="${TMP_DIR}/${APP_NAME}.app"
 mkdir -p "${APP_BUNDLE}/Contents/MacOS"
 mkdir -p "${APP_BUNDLE}/Contents/Resources"
-cp ".build/release/${APP_NAME}" "${APP_BUNDLE}/Contents/MacOS/${APP_NAME}"
+cp "${BIN_PATH}/${APP_NAME}" "${APP_BUNDLE}/Contents/MacOS/${APP_NAME}"
 cp Info.plist "${APP_BUNDLE}/Contents/Info.plist"
 cp AppIcon.icns "${APP_BUNDLE}/Contents/Resources/AppIcon.icns"
 codesign --force --sign - "${APP_BUNDLE}" 2>/dev/null

@@ -21,12 +21,17 @@ DMG_NAME="${APP_NAME}.dmg"
 echo "Building release binary..."
 swift build -c release
 
+BIN_PATH=$(swift build -c release --show-bin-path 2>/dev/null || echo "${BUILD_DIR}")
+if [ ! -f "${BIN_PATH}/${APP_NAME}" ]; then
+    BIN_PATH="${BUILD_DIR}"
+fi
+
 echo "Creating app bundle..."
 rm -rf "${APP_BUNDLE}"
 mkdir -p "${APP_BUNDLE}/Contents/MacOS"
 mkdir -p "${APP_BUNDLE}/Contents/Resources"
 
-cp "${BUILD_DIR}/${APP_NAME}" "${APP_BUNDLE}/Contents/MacOS/${APP_NAME}"
+cp "${BIN_PATH}/${APP_NAME}" "${APP_BUNDLE}/Contents/MacOS/${APP_NAME}"
 cp Info.plist "${APP_BUNDLE}/Contents/Info.plist"
 cp AppIcon.icns "${APP_BUNDLE}/Contents/Resources/AppIcon.icns"
 
