@@ -14,6 +14,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var sizeMenuItems: [OverlaySize: NSMenuItem] = [:]
     private var toggleItem: NSMenuItem!
     private var activeSourceItem: NSMenuItem!
+    private var playPauseMenuItem: NSMenuItem!
+    private var bottomNavbarAutoHideItem: NSMenuItem!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupMenuBar()
@@ -30,7 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let menu = NSMenu()
 
-        // Active auto-detected player status
+        // Active auto-detected player status + time
         activeSourceItem = NSMenuItem(
             title: "Auto-detecting Spotify / YouTube Music...",
             action: nil,
@@ -38,6 +40,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         activeSourceItem.isEnabled = false
         menu.addItem(activeSourceItem)
+
+        menu.addItem(NSMenuItem.separator())
+
+        // Playback Controls directly in Menu Bar menu (useful in Menu Bar Ticker mode & all modes)
+        playPauseMenuItem = NSMenuItem(
+            title: "Play / Pause",
+            action: #selector(menuTogglePlayPause(_:)),
+            keyEquivalent: " "
+        )
+        playPauseMenuItem.target = self
+        menu.addItem(playPauseMenuItem)
+
+        let nextItem = NSMenuItem(
+            title: "Next Track",
+            action: #selector(menuNextTrack(_:)),
+            keyEquivalent: "]"
+        )
+        nextItem.target = self
+        menu.addItem(nextItem)
+
+        let prevItem = NSMenuItem(
+            title: "Previous Track",
+            action: #selector(menuPreviousTrack(_:)),
+            keyEquivalent: "["
+        )
+        prevItem.target = self
+        menu.addItem(prevItem)
 
         menu.addItem(NSMenuItem.separator())
 
@@ -55,6 +84,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             displayMenu.addItem(item)
             modeMenuItems[mode] = item
         }
+        displayMenu.addItem(NSMenuItem.separator())
+
+        bottomNavbarAutoHideItem = NSMenuItem(
+            title: "Bottom Navbar: Auto-Hide on Pause",
+            action: #selector(toggleBottomNavbarAutoHide(_:)),
+            keyEquivalent: ""
+        )
+        bottomNavbarAutoHideItem.target = self
+        bottomNavbarAutoHideItem.state = displaySettings.bottomNavbarAutoHide ? .on : .off
+        displayMenu.addItem(bottomNavbarAutoHideItem)
+
         let displayItem = NSMenuItem(title: "Display", action: nil, keyEquivalent: "")
         displayItem.submenu = displayMenu
         menu.addItem(displayItem)
@@ -126,9 +166,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         viewModel.$lines
             .combineLatest(viewModel.$currentLineIndex, viewModel.$trackTitle, viewModel.$isPlaying)
+            .combineLatest(viewModel.$currentPosition)
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] lines, index, title, isPlaying in
+            .sink { [weak self] combined, _ in
                 guard let self, self.displaySettings.mode == .menuBar else { return }
+                let (lines, index, title, isPlaying) = combined
                 self.updateTickerText(lines: lines, index: index, title: title, isPlaying: isPlaying)
             }
             .store(in: &cancellables)
@@ -137,12 +179,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func updateTickerText(lines: [LyricLine], index: Int?, title: String, isPlaying: Bool) {
         if title.isEmpty || !isPlaying {
             ticker?.updateText("")
-        } else if let idx = index, idx < lines.count {
-            ticker?.updateText(lines[idx].text)
+            return
+        }
+        let timeBadge = "[\(viewModel.formattedCurrentTime)]"
+        if let idx = index, idx < lines.count {
+            ticker?.updateText("\(timeBadge) \(lines[idx].text)")
         } else if !lines.isEmpty {
-            ticker?.updateText("\(title) - \(viewModel.artist)")
+            ticker?.updateText("\(timeBadge) \(title) - \(viewModel.artist)")
         } else {
-            ticker?.updateText(title)
+            ticker?.updateText("\(timeBadge) \(title)")
         }
     }
 
@@ -166,20 +211,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.overlayController.applyDisplayMode(self.displaySettings.mode)
             }
             .store(in: &cancellables)
+
+        displaySettings.$bottomNavbarAutoHide
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] enabled in
+                guard let self else { return }
+                self.bottomNavbarAutoHideItem?.state = enabled ? .on : .off
+                self.overlayController.updateVisibilityForPlayState()
+            }
+            .store(in: &cancellables)
     }
 
     private func observePlayerChanges() {
         viewModel.$activeSourceName
-            .combineLatest(viewModel.$trackTitle, viewModel.$isPlaying)
+            .combineLatest(viewModel.$trackTitle, viewModel.$isPlaying, viewModel.$currentPosition)
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] sourceName, title, isPlaying in
+            .sink { [weak self] sourceName, title, isPlaying, _ in
                 guard let self else { return }
+                self.playPauseMenuItem?.title = isPlaying ? "Pause" : "Play"
                 if title.isEmpty || sourceName.isEmpty {
                     self.activeSourceItem.title = "Auto-detecting Spotify / YouTube Music..."
-                } else if isPlaying {
-                    self.activeSourceItem.title = "Playing from \(sourceName): \(title)"
                 } else {
-                    self.activeSourceItem.title = "Paused (\(sourceName)): \(title)"
+                    let status = isPlaying ? "Playing" : "Paused"
+                    self.activeSourceItem.title = "\(status) (\(sourceName)): \(title) [\(self.viewModel.formattedTimeDisplay)]"
                 }
             }
             .store(in: &cancellables)
@@ -191,7 +246,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         switch mode {
-        case .floating, .corner, .subtitle:
+        case .floating, .corner, .subtitle, .bottomNavbar:
             ticker?.stop()
             setDefaultStatusIcon()
             overlayController.applyDisplayMode(mode)
@@ -211,6 +266,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    @objc private func menuTogglePlayPause(_ sender: NSMenuItem) {
+        viewModel.togglePlayPause()
+    }
+
+    @objc private func menuNextTrack(_ sender: NSMenuItem) {
+        viewModel.nextTrack()
+    }
+
+    @objc private func menuPreviousTrack(_ sender: NSMenuItem) {
+        viewModel.previousTrack()
+    }
+
     @objc private func selectDisplayMode(_ sender: NSMenuItem) {
         guard let mode = sender.representedObject as? DisplayMode else { return }
         displaySettings.mode = mode
@@ -219,6 +286,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func selectOverlaySize(_ sender: NSMenuItem) {
         guard let size = sender.representedObject as? OverlaySize else { return }
         displaySettings.size = size
+    }
+
+    @objc private func toggleBottomNavbarAutoHide(_ sender: NSMenuItem) {
+        displaySettings.bottomNavbarAutoHide.toggle()
     }
 
     @objc private func toggleOverlay(_ sender: NSMenuItem) {

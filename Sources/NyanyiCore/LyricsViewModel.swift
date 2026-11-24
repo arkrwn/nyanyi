@@ -5,6 +5,8 @@ public final class LyricsViewModel: ObservableObject {
     @Published public var lines: [LyricLine] = []
     @Published public var currentLineIndex: Int?
     @Published public var lineProgress: Double = 0
+    @Published public var currentPosition: Double = 0
+    @Published public var trackDuration: Double = 0
     @Published public var trackTitle: String = ""
     @Published public var artist: String = ""
     @Published public var activeSourceName: String = ""
@@ -29,9 +31,15 @@ public final class LyricsViewModel: ObservableObject {
         playerMonitor.$playerPosition
             .receive(on: DispatchQueue.main)
             .sink { [weak self] position in
-                self?.updateActiveLine(for: position)
+                guard let self else { return }
+                self.currentPosition = position
+                self.updateActiveLine(for: position)
             }
             .store(in: &cancellables)
+
+        playerMonitor.$trackDuration
+            .receive(on: DispatchQueue.main)
+            .assign(to: &$trackDuration)
 
         playerMonitor.$isPlaying
             .receive(on: DispatchQueue.main)
@@ -40,6 +48,53 @@ public final class LyricsViewModel: ObservableObject {
         playerMonitor.$activeSourceName
             .receive(on: DispatchQueue.main)
             .assign(to: &$activeSourceName)
+    }
+
+    // MARK: - Playback Controls
+
+    public func togglePlayPause() {
+        playerMonitor.togglePlayPause()
+    }
+
+    public func nextTrack() {
+        playerMonitor.nextTrack()
+    }
+
+    public func previousTrack() {
+        playerMonitor.previousTrack()
+    }
+
+    public var formattedCurrentTime: String {
+        Self.formatTime(currentPosition)
+    }
+
+    public var formattedDuration: String {
+        let effectiveDur = effectiveTrackDuration
+        return effectiveDur > 0 ? Self.formatTime(effectiveDur) : "--:--"
+    }
+
+    public var formattedTimeDisplay: String {
+        "\(formattedCurrentTime) / \(formattedDuration)"
+    }
+
+    public var effectiveTrackDuration: Double {
+        if trackDuration > 0 { return trackDuration }
+        if let lastLine = lines.last { return max(currentPosition, lastLine.time + 8.0) }
+        return max(currentPosition, 0)
+    }
+
+    public var trackProgressFraction: Double {
+        let dur = effectiveTrackDuration
+        guard dur > 0 else { return 0 }
+        return min(max(currentPosition / dur, 0.0), 1.0)
+    }
+
+    public static func formatTime(_ seconds: Double) -> String {
+        guard seconds.isFinite && seconds >= 0 else { return "0:00" }
+        let totalSeconds = Int(floor(seconds))
+        let mins = totalSeconds / 60
+        let secs = totalSeconds % 60
+        return String(format: "%d:%02d", mins, secs)
     }
 
     private func onTrackChanged(_ track: TrackInfo?) {
@@ -57,6 +112,9 @@ public final class LyricsViewModel: ObservableObject {
 
         let isSameSong = (trackTitle == track.title && artist == track.artist && !trackTitle.isEmpty)
         activeSourceName = track.sourceName
+        if track.duration > 0 {
+            trackDuration = track.duration
+        }
 
         if !isSameSong {
             trackTitle = track.title
@@ -72,9 +130,6 @@ public final class LyricsViewModel: ObservableObject {
             var fetched = await LyricsService.shared.fetchLyrics(track: track)
             guard !Task.isCancelled, let self = self else { return }
 
-            // If external databases (LRCLIB, NetEase, Lyrics.ovh) have no entry for this song
-            // (for example local/indie YouTube Music tracks like "Josjis - Waru Leaf"),
-            // extract synced captions or inline lyrics directly from the active Google Chrome tab!
             if fetched.isEmpty {
                 let inline = self.playerMonitor.fetchBrowserInlineLyrics()
                 if !inline.isEmpty {

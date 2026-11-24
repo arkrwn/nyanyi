@@ -27,12 +27,20 @@ Released under the [MIT License](LICENSE).
     - **Cyrillic (Russian, Ukrainian, etc.)** -> Latin transliteration
     - **Thai** -> Word-segmented Latin romanization (`CFStringTokenizer` `th`)
     - **Greek, Hebrew, Devanagari/Hindi & All Other Non-Latin Scripts** -> Universal ICU `Any-Latin` transliteration
-- **Four Display Modes (Visible Even Over Full-Screen Apps)**
+- **Five Display Modes (Visible Even Over Full-Screen Apps)**
   - **Floating Card**: Translucent Apple Liquid Glass HUD overlay (`NSVisualEffectView`), draggable and resizable anywhere on screen.
   - **Corner Card**: Compact PiP-style overlay that snaps to the nearest screen corner on drag release.
-  - **Subtitle (Movie Style)**: Dynamic 2-line Apple Glass cinema subtitle pill that tightly wraps its text and can be dragged freely anywhere on screen (top, center, bottom). Every pixel outside the subtitle pill itself passes clicks directly to the apps behind it.
-  - **Menu Bar Ticker**: Live scrolling lyric ticker directly inside the macOS status bar.
+  - **Subtitle (Movie Style)**: Dynamic 2-line Apple Glass cinema subtitle pill with static dimensions per size tier (`Small`: `340x60`, `Medium`: `450x74`, `Large`: `570x90`) that can be dragged freely anywhere on screen. Every pixel outside the subtitle pill passes clicks directly to the apps behind it.
+  - **Bottom Navbar (Apple Bar)**: Full-width (`100%` screen width) bar docked at the very bottom edge of the screen with exact Apple Menu Bar height and adaptive macOS Menu Bar color/material. Displays playback controls, song title, artist, active + next lyric lines, elapsed/total time (`mm:ss / mm:ss`), and a clean read-only progress bar. Includes a dedicated **Bottom Navbar: Auto-Hide on Pause** toggle in the `Display` menu (default **Off** so playback controls remain accessible while paused).
+  - **Menu Bar Ticker**: Live scrolling lyric ticker directly inside the macOS status bar with live timestamp badge (`[mm:ss]`) and automatic light/dark menu bar color inversion.
   - **Full-Screen Support**: Uses `NSPanel` with `.screenSaver` window level, `.canJoinAllSpaces`, `.fullScreenAuxiliary`, and `hidesOnDeactivate = false` so lyrics stay visible even while games, browsers, or video players are in macOS full-screen mode.
+- **Instant Native Media Key Playback Controls & Live Time Sync Across All Modes**
+  - Every display mode (and the macOS Menu Bar menu) includes **Previous Track**, **Play / Pause**, and **Next Track** controls powered by native macOS hardware media keys (`IOHIDPostEvent`: `NX_KEYTYPE_PREVIOUS`, `NX_KEYTYPE_PLAY`, `NX_KEYTYPE_NEXT`) for instant (~0ms) response without AppleScript/DOM lag.
+  - Displays a live synced timestamp (`mm:ss / mm:ss`) and progress bar.
+  - Automatically minimizes/hides the overlay when playback is paused (configurable for Bottom Navbar via **Bottom Navbar: Auto-Hide on Pause**) and restores it smoothly when playback resumes.
+  - Displays a **`Music Only`** indicator during instrumental intros, interludes, and mid-song guitar/drum solos.
+- **Re-calibrated Compact Sizes (`Small`, `Medium`, `Large`)**
+  - Switch between `Small` (`0.65x`), `Medium` (`0.82x`), and `Large` (`1.0x`) from the menu bar for sleek, unobtrusive overlays.
 - **Smart Lyrics Lookup ([LRCLIB](https://lrclib.net))**
   - Automatically strips YouTube Music and Spotify suffixes (`- Topic`, `(Official Music Video)`, `(Official Audio)`, `(Lyric Video)`, `[MV]`, `Remastered`, etc.) for high match rates.
   - Supports both time-synced LRC (`syncedLyrics`) and auto-paced `plainLyrics` fallback.
@@ -71,7 +79,16 @@ cp -R Nyanyi.app /Applications/
 
 ---
 
-## Required Google Chrome Setup (YouTube Music & Spotify Web)
+## Required macOS Permissions
+
+### 1. Accessibility (for Playback Controls: Previous / Play-Pause / Next)
+
+Nyanyi triggers macOS hardware media keys (`IOHIDPostEvent`) so **Previous**, **Play / Pause**, and **Next** respond instantaneously (~0ms) across YouTube Music, Spotify, and other macOS media players.
+
+- On first launch (or first control click), macOS will show an **Accessibility** permission prompt.
+- Enable **Nyanyi** in **System Settings → Privacy & Security → Accessibility**.
+
+### 2. Google Chrome Setup (YouTube Music & Spotify Web)
 
 > **Important**: Currently, browser playback is **only tested and supported on Google Chrome** (`music.youtube.com` and `open.spotify.com`). Other browsers have not been tested yet.
 
@@ -89,6 +106,7 @@ For **Nyanyi** to read the active song metadata (`navigator.mediaSession.metadat
 nyanyi/
 ├── .github/workflows/ci.yml             # GitHub Actions macOS CI (swift test + package.sh --dmg)
 ├── LICENSE                              # MIT License
+├── CHANGELOG.md                         # Release history & changes
 ├── Package.swift                        # Swift Package Manager manifest (macOS 13+)
 ├── Info.plist                           # App bundle metadata (LSUIElement + AppleEvents usage)
 ├── AppIcon.icns                         # macOS application icon
