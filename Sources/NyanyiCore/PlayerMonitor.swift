@@ -1,5 +1,7 @@
 import AppKit
+import ApplicationServices
 import Combine
+import IOKit.hidsystem
 
 public struct TrackInfo: Equatable {
     public let title: String
@@ -32,6 +34,7 @@ public struct PlayerSnapshot: Equatable {
 public final class PlayerMonitor: ObservableObject {
     @Published public var currentTrack: TrackInfo?
     @Published public var playerPosition: Double = 0
+    @Published public var trackDuration: Double = 0
     @Published public var isPlaying: Bool = false
     @Published public var activeSourceName: String = ""
     @Published public var browserInlineLyrics: [LyricLine] = []
@@ -40,6 +43,10 @@ public final class PlayerMonitor: ObservableObject {
     private var interpolationTimer: Timer?
     private var lastKnownPosition: Double = 0
     private var lastPollTimestamp: Date = Date()
+    private var isPolling = false
+    private var hasPromptedAccessibility = false
+    private var hidConnection: io_connect_t = 0
+    private let appleScriptLock = NSLock()
     private let pollQueue = DispatchQueue(label: "id.arkrwn.nyanyi.player-poll", qos: .utility)
 
     public init(autoStart: Bool = true) {
@@ -53,7 +60,8 @@ public final class PlayerMonitor: ObservableObject {
     }
 
     public func startMonitoring() {
-        pollTimer = Timer.scheduledTimer(withTimeInterval: 0.4, repeats: true) { [weak self] _ in
+        _ = ensureAccessibilityPermission(promptIfNeeded: true)
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 0.85, repeats: true) { [weak self] _ in
             self?.pollPlayers()
         }
         interpolationTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
@@ -67,6 +75,10 @@ public final class PlayerMonitor: ObservableObject {
         pollTimer = nil
         interpolationTimer?.invalidate()
         interpolationTimer = nil
+        if hidConnection != 0 {
+            IOServiceClose(hidConnection)
+            hidConnection = 0
+        }
     }
 
     private func interpolatePosition() {
@@ -75,6 +87,79 @@ public final class PlayerMonitor: ObservableObject {
         // Cap interpolation to 0.55s so a paused/loading track never runs ahead of actual audio
         guard elapsed <= 0.55 else { return }
         playerPosition = lastKnownPosition + elapsed
+    }
+
+    // MARK: - Realtime Playback Controls (Native macOS Hardware Media Keys via IOHIDPostEvent, ~0ms)
+
+    private func ensureAccessibilityPermission(promptIfNeeded: Bool) -> Bool {
+        if AXIsProcessTrusted() {
+            return true
+        }
+        guard promptIfNeeded, !hasPromptedAccessibility else {
+            return false
+        }
+        hasPromptedAccessibility = true
+        let key = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
+        let options = [key: true] as CFDictionary
+        return AXIsProcessTrustedWithOptions(options)
+    }
+
+    private func openHIDConnection() -> io_connect_t {
+        if hidConnection != 0 {
+            return hidConnection
+        }
+        let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching(kIOHIDSystemClass))
+        guard service != 0 else { return 0 }
+        defer { IOObjectRelease(service) }
+        var connect: io_connect_t = 0
+        let kr = IOServiceOpen(service, mach_task_self_, UInt32(kIOHIDParamConnectType), &connect)
+        guard kr == KERN_SUCCESS else { return 0 }
+        hidConnection = connect
+        return connect
+    }
+
+    private func postSystemMediaKey(_ keyType: Int32) {
+        guard ensureAccessibilityPermission(promptIfNeeded: true) else {
+            return
+        }
+        let connect = openHIDConnection()
+        guard connect != 0 else { return }
+
+        func send(keyDown: Bool) {
+            var eventData = NXEventData()
+            eventData.compound.subType = Int16(NX_SUBTYPE_AUX_CONTROL_BUTTONS)
+            eventData.compound.misc.L.0 = Int32((keyType << 16) | ((keyDown ? 0x0a : 0x0b) << 8))
+            let loc = IOGPoint(x: 0, y: 0)
+            IOHIDPostEvent(
+                connect,
+                UInt32(NX_SYSDEFINED),
+                loc,
+                &eventData,
+                UInt32(kNXEventDataVersion),
+                0,
+                0
+            )
+        }
+
+        send(keyDown: true)
+        send(keyDown: false)
+    }
+
+    public func togglePlayPause() {
+        isPlaying.toggle()
+        lastPollTimestamp = Date()
+        postSystemMediaKey(NX_KEYTYPE_PLAY)
+        pollPlayers()
+    }
+
+    public func nextTrack() {
+        postSystemMediaKey(NX_KEYTYPE_NEXT)
+        pollPlayers()
+    }
+
+    public func previousTrack() {
+        postSystemMediaKey(NX_KEYTYPE_PREVIOUS)
+        pollPlayers()
     }
 
     /// Queries the browser tab (Google Chrome) for inline lyrics or auto-captions/subtitles of the current track.
@@ -182,6 +267,10 @@ public final class PlayerMonitor: ObservableObject {
     private func pollPlayers() {
         pollQueue.async { [weak self] in
             guard let self else { return }
+            guard !self.isPolling else { return }
+            self.isPolling = true
+            defer { self.isPolling = false }
+
             let snapshot = self.resolveActiveSnapshot()
 
             DispatchQueue.main.async {
@@ -193,6 +282,11 @@ public final class PlayerMonitor: ObservableObject {
                 let titleOrArtistChanged = (self.currentTrack?.title != snap.track.title || self.currentTrack?.artist != snap.track.artist)
                 if self.currentTrack != snap.track {
                     self.currentTrack = snap.track
+                }
+                if snap.track.duration > 0 {
+                    self.trackDuration = snap.track.duration
+                } else if titleOrArtistChanged {
+                    self.trackDuration = 0
                 }
 
                 if titleOrArtistChanged {
@@ -707,6 +801,8 @@ public final class PlayerMonitor: ObservableObject {
     }
 
     private func runAppleScript(_ source: String) -> String? {
+        appleScriptLock.lock()
+        defer { appleScriptLock.unlock() }
         let script = NSAppleScript(source: source)
         var error: NSDictionary?
         guard let output = script?.executeAndReturnError(&error) else {

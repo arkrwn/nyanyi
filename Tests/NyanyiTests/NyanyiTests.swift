@@ -62,14 +62,22 @@ final class NyanyiTests: XCTestCase {
 
     func testDisplayModesIncludeMovieSubtitles() {
         XCTAssertTrue(DisplayMode.subtitle.isSubtitleStyle)
+        XCTAssertTrue(DisplayMode.bottomNavbar.isBottomNavbar)
         XCTAssertFalse(DisplayMode.floating.isSubtitleStyle)
         XCTAssertFalse(DisplayMode.corner.isSubtitleStyle)
         XCTAssertFalse(DisplayMode.menuBar.isSubtitleStyle)
-        XCTAssertEqual(DisplayMode.allCases.count, 4)
+        XCTAssertEqual(DisplayMode.allCases.count, 5)
 
         XCTAssertEqual(OverlaySize.allCases.count, 3)
+        XCTAssertEqual(OverlaySize.small.scaleFactor, 0.65, accuracy: 0.01)
+        XCTAssertEqual(OverlaySize.medium.scaleFactor, 0.82, accuracy: 0.01)
+        XCTAssertEqual(OverlaySize.large.scaleFactor, 1.0, accuracy: 0.01)
         XCTAssertLessThan(OverlaySize.small.scaleFactor, OverlaySize.medium.scaleFactor)
         XCTAssertGreaterThan(OverlaySize.large.scaleFactor, OverlaySize.medium.scaleFactor)
+
+        XCTAssertEqual(LyricsViewModel.formatTime(0), "0:00")
+        XCTAssertEqual(LyricsViewModel.formatTime(65), "1:05")
+        XCTAssertEqual(LyricsViewModel.formatTime(242.8), "4:02")
     }
 
     // MARK: - LRC & Plain Lyrics Parsing
@@ -217,5 +225,15 @@ final class NyanyiTests: XCTestCase {
         XCTAssertEqual(snap?.track.sourceName, "YouTube Music (App)")
         XCTAssertEqual(snap?.isPlaying, true)
         XCTAssertEqual(snap?.position ?? 0, 32.4, accuracy: 0.01)
+    }
+
+    func testBottomNavbarAutoHideDefaultIsOff() {
+        UserDefaults.standard.removeObject(forKey: "bottomNavbarAutoHide")
+        let settings = DisplaySettings()
+        XCTAssertFalse(settings.bottomNavbarAutoHide)
+        settings.bottomNavbarAutoHide = true
+        let reloaded = DisplaySettings()
+        XCTAssertTrue(reloaded.bottomNavbarAutoHide)
+        UserDefaults.standard.removeObject(forKey: "bottomNavbarAutoHide")
     }
 }
