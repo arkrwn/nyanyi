@@ -2,12 +2,17 @@ import Foundation
 import CoreFoundation
 
 /// A single word/character (or phrase unit) paired with its phonetic reading (when applicable).
-struct AnnotatedChar {
-    let character: String
-    let phonetic: String
+public struct AnnotatedChar: Equatable {
+    public let character: String
+    public let phonetic: String
+
+    public init(character: String, phonetic: String) {
+        self.character = character
+        self.phonetic = phonetic
+    }
 }
 
-enum DetectedScript: String {
+public enum DetectedScript: String, Equatable {
     case latin = "Latin"
     case chinese = "Chinese"
     case japanese = "Japanese"
@@ -21,10 +26,10 @@ enum DetectedScript: String {
     case otherNonLatin = "OtherNonLatin"
 }
 
-enum PhoneticConverter {
+public enum PhoneticConverter {
 
     /// Detects the primary script of a text line across all world languages.
-    static func detectScript(_ text: String) -> DetectedScript {
+    public static func detectScript(_ text: String) -> DetectedScript {
         var counts: [DetectedScript: Int] = [:]
         var hasHiraganaOrKatakana = false
 
@@ -52,17 +57,14 @@ enum PhoneticConverter {
             } else if (0x0041...0x005A).contains(v) || (0x0061...0x007A).contains(v) || (0x00C0...0x024F).contains(v) || (0x1E00...0x1EFF).contains(v) {
                 counts[.latin, default: 0] += 1
             } else if CharacterSet.letters.contains(scalar) {
-                // Bengali, Tamil, Telugu, Malayalam, Kannada, Sinhala, Georgian, Armenian, Khmer, Burmese, Lao, Amharic, etc.
                 counts[.otherNonLatin, default: 0] += 1
             }
         }
 
-        // If any Hiragana/Katakana appears alongside Kanji, the line is Japanese
         if hasHiraganaOrKatakana {
             return .japanese
         }
 
-        // Prioritize non-Latin scripts if present so mixed lines (e.g. K-pop, J-pop, Indo/Arab, Hindi/English) still romanize non-Latin tokens
         let nonLatinCounts = counts.filter { $0.key != .latin }
         if let topNonLatin = nonLatinCounts.max(by: { $0.value < $1.value }), topNonLatin.value > 0 {
             return topNonLatin.key
@@ -72,7 +74,7 @@ enum PhoneticConverter {
     }
 
     /// Annotates a line of lyrics into word/character tokens with optional phonetic romanization above non-Latin scripts.
-    static func annotate(_ text: String, mode: PhoneticMode = .autoNonLatin) -> [AnnotatedChar] {
+    public static func annotate(_ text: String, mode: PhoneticMode = .autoNonLatin) -> [AnnotatedChar] {
         guard !text.isEmpty else { return [] }
         if mode == .off {
             return annotateLatinOnly(text)
@@ -106,10 +108,9 @@ enum PhoneticConverter {
         }
     }
 
-    // MARK: - Latin Script (Indonesian, English, Spanish, French, German, Tagalog, Malay, Portuguese, Vietnamese, Turkish, etc.)
+    // MARK: - Latin Script
 
     private static func annotateLatinOnly(_ text: String) -> [AnnotatedChar] {
-        // Keep clean word tokens without redundant duplicate annotations above Latin script
         let tokens = tokenizeWordsPreservingSpaces(text)
         return tokens.map { AnnotatedChar(character: $0, phonetic: "") }
     }
@@ -119,7 +120,6 @@ enum PhoneticConverter {
         return tokens.map { token in
             let stripped = stripDiacritics(token).lowercased()
             let lowerOrig = token.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            // Only show reading above Latin word if it actually had diacritics/accents (e.g. Vietnamese, French, Spanish)
             if stripped != lowerOrig && !stripped.isEmpty {
                 return AnnotatedChar(character: token, phonetic: stripped)
             }
@@ -245,7 +245,7 @@ enum PhoneticConverter {
         return result
     }
 
-    // MARK: - Word-Segmented Script (Thai, etc.)
+    // MARK: - Word-Segmented Script (Thai)
 
     private static func annotateSegmentedLocale(_ text: String, localeIdentifier: String, transform: CFString) -> [AnnotatedChar] {
         let cfText = text as CFString
@@ -294,7 +294,7 @@ enum PhoneticConverter {
         return result
     }
 
-    // MARK: - Word-Level Alphabetic / Abjad / Abugida Scripts (Arabic, Cyrillic, Greek, Hebrew, Devanagari/Hindi, etc.)
+    // MARK: - Word-Level Alphabetic / Abjad / Abugida Scripts
 
     private static func annotateWordLevel(_ text: String, transform: CFString) -> [AnnotatedChar] {
         let tokens = tokenizeWordsPreservingSpaces(text)

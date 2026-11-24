@@ -1,12 +1,12 @@
 import Foundation
 import Combine
 
-enum DisplayMode: String, CaseIterable {
+public enum DisplayMode: String, CaseIterable {
     case floating = "floating"
     case corner = "corner"
     case menuBar = "menubar"
 
-    var label: String {
+    public var label: String {
         switch self {
         case .floating: return "Floating"
         case .corner: return "Corner"
@@ -15,12 +15,12 @@ enum DisplayMode: String, CaseIterable {
     }
 }
 
-enum PlayerSourcePreference: String, CaseIterable {
+public enum PlayerSourcePreference: String, CaseIterable {
     case auto = "auto"
     case spotify = "spotify"
     case youtubeMusic = "ytmusic"
 
-    var label: String {
+    public var label: String {
         switch self {
         case .auto: return "Auto (Spotify + YouTube Music)"
         case .spotify: return "Spotify Only"
@@ -29,12 +29,12 @@ enum PlayerSourcePreference: String, CaseIterable {
     }
 }
 
-enum PhoneticMode: String, CaseIterable {
+public enum PhoneticMode: String, CaseIterable {
     case autoNonLatin = "auto"
     case allScripts = "all"
     case off = "off"
 
-    var label: String {
+    public var label: String {
         switch self {
         case .autoNonLatin: return "Auto (Non-Latin -> Latin)"
         case .allScripts: return "All Scripts"
@@ -43,28 +43,28 @@ enum PhoneticMode: String, CaseIterable {
     }
 }
 
-enum CornerPosition: String, CaseIterable {
+public enum CornerPosition: String, CaseIterable {
     case topLeft = "topLeft"
     case topRight = "topRight"
     case bottomLeft = "bottomLeft"
     case bottomRight = "bottomRight"
 }
 
-final class DisplaySettings: ObservableObject {
-    @Published var mode: DisplayMode {
+public final class DisplaySettings: ObservableObject {
+    @Published public var mode: DisplayMode {
         didSet { UserDefaults.standard.set(mode.rawValue, forKey: "displayMode") }
     }
-    @Published var corner: CornerPosition {
+    @Published public var corner: CornerPosition {
         didSet { UserDefaults.standard.set(corner.rawValue, forKey: "cornerPosition") }
     }
-    @Published var sourcePreference: PlayerSourcePreference {
+    @Published public var sourcePreference: PlayerSourcePreference {
         didSet { UserDefaults.standard.set(sourcePreference.rawValue, forKey: "sourcePreference") }
     }
-    @Published var phoneticMode: PhoneticMode {
+    @Published public var phoneticMode: PhoneticMode {
         didSet { UserDefaults.standard.set(phoneticMode.rawValue, forKey: "phoneticMode") }
     }
 
-    init() {
+    public init() {
         let savedMode = UserDefaults.standard.string(forKey: "displayMode") ?? ""
         self.mode = DisplayMode(rawValue: savedMode) ?? .floating
 

@@ -1,13 +1,13 @@
 import Foundation
 
-struct LyricLine: Identifiable, Equatable {
-    let id = UUID()
-    let time: Double
-    let text: String
-    let annotations: [AnnotatedChar]
-    let hasPhonetics: Bool
+public struct LyricLine: Identifiable, Equatable {
+    public let id = UUID()
+    public let time: Double
+    public let text: String
+    public let annotations: [AnnotatedChar]
+    public let hasPhonetics: Bool
 
-    init(time: Double, text: String, phoneticMode: PhoneticMode = .autoNonLatin) {
+    public init(time: Double, text: String, phoneticMode: PhoneticMode = .autoNonLatin) {
         self.time = time
         self.text = text
         let chars = PhoneticConverter.annotate(text, mode: phoneticMode)
@@ -15,28 +15,28 @@ struct LyricLine: Identifiable, Equatable {
         self.hasPhonetics = chars.contains { !$0.phonetic.isEmpty }
     }
 
-    func withPhoneticMode(_ mode: PhoneticMode) -> LyricLine {
+    public func withPhoneticMode(_ mode: PhoneticMode) -> LyricLine {
         LyricLine(time: time, text: text, phoneticMode: mode)
     }
 
-    static func == (lhs: LyricLine, rhs: LyricLine) -> Bool {
+    public static func == (lhs: LyricLine, rhs: LyricLine) -> Bool {
         lhs.time == rhs.time && lhs.text == rhs.text && lhs.hasPhonetics == rhs.hasPhonetics
     }
 }
 
-struct LRCLibResponse: Decodable {
-    let id: Int?
-    let trackName: String?
-    let artistName: String?
-    let albumName: String?
-    let duration: Double?
-    let instrumental: Bool?
-    let plainLyrics: String?
-    let syncedLyrics: String?
+public struct LRCLibResponse: Decodable {
+    public let id: Int?
+    public let trackName: String?
+    public let artistName: String?
+    public let albumName: String?
+    public let duration: Double?
+    public let instrumental: Bool?
+    public let plainLyrics: String?
+    public let syncedLyrics: String?
 }
 
-final class LyricsService {
-    static let shared = LyricsService()
+public final class LyricsService {
+    public static let shared = LyricsService()
 
     private let baseURL = "https://lrclib.net/api"
     private let session: URLSession
@@ -51,7 +51,7 @@ final class LyricsService {
         session = URLSession(configuration: config)
     }
 
-    func fetchLyrics(track: TrackInfo, phoneticMode: PhoneticMode = .autoNonLatin) async -> [LyricLine] {
+    public func fetchLyrics(track: TrackInfo, phoneticMode: PhoneticMode = .autoNonLatin) async -> [LyricLine] {
         let cleanedTitle = Self.cleanTrackTitle(track.title)
         let cleanedArtist = Self.cleanArtistName(track.artist)
         let cacheKey = "\(cleanedArtist)|\(cleanedTitle)"
@@ -60,13 +60,11 @@ final class LyricsService {
             return cached.map { $0.withPhoneticMode(phoneticMode) }
         }
 
-        // 1. Try exact match with original metadata
         if let lines = await fetchExact(track: track, phoneticMode: phoneticMode), !lines.isEmpty {
             cache[cacheKey] = lines
             return lines
         }
 
-        // 2. Try exact match with cleaned YouTube Music / Spotify metadata
         if cleanedTitle != track.title || cleanedArtist != track.artist {
             let cleanedTrack = TrackInfo(
                 title: cleanedTitle,
@@ -81,13 +79,11 @@ final class LyricsService {
             }
         }
 
-        // 3. Fallback to search endpoint with cleaned title + artist
         if let lines = await fetchSearch(title: cleanedTitle, artist: cleanedArtist, duration: track.duration, phoneticMode: phoneticMode), !lines.isEmpty {
             cache[cacheKey] = lines
             return lines
         }
 
-        // 4. Last-resort search by cleaned title only (helpful when YouTube Music uses channel name as artist)
         if let lines = await fetchSearch(title: cleanedTitle, artist: "", duration: track.duration, phoneticMode: phoneticMode), !lines.isEmpty {
             cache[cacheKey] = lines
             return lines
@@ -147,12 +143,10 @@ final class LyricsService {
                 return nil
             }
             let results = try JSONDecoder().decode([LRCLibResponse].self, from: data)
-            // Prefer synced lyrics first
             if let syncedMatch = results.first(where: { ($0.syncedLyrics ?? "").isEmpty == false }),
                let lrc = syncedMatch.syncedLyrics {
                 return Self.parseLRC(lrc, phoneticMode: phoneticMode)
             }
-            // Fall back to plain lyrics if no synced LRC exists
             if let plainMatch = results.first(where: { ($0.plainLyrics ?? "").isEmpty == false }),
                let plain = plainMatch.plainLyrics {
                 let dur = plainMatch.duration ?? duration
@@ -166,9 +160,8 @@ final class LyricsService {
 
     // MARK: - Title & Artist Normalization for YouTube Music & Spotify
 
-    static func cleanTrackTitle(_ raw: String) -> String {
+    public static func cleanTrackTitle(_ raw: String) -> String {
         var s = raw
-        // Strip common YouTube Music / Spotify suffixes in parentheses or brackets
         let patterns = [
             "(?i)\\s*[\\(\\[](official\\s*(music\\s*)?video|official\\s*audio|official\\s*lyric\\s*video|lyric\\s*video|lyrics|audio|mv|m/v|visualizer|hd|4k|remastered(\\s*\\d{4})?|live[^\\)\\]]*)[\\)\\]]",
             "(?i)\\s+-\\s+(remastered(\\s*\\d{4})?|single\\s*version|album\\s*version|live.*)$"
@@ -182,9 +175,8 @@ final class LyricsService {
         return s.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    static func cleanArtistName(_ raw: String) -> String {
+    public static func cleanArtistName(_ raw: String) -> String {
         var s = raw
-        // Strip YouTube auto-generated "- Topic" channel suffix and VEVO suffix
         let patterns = [
             "(?i)\\s*-\\s*topic$",
             "(?i)vevo$"
@@ -195,7 +187,6 @@ final class LyricsService {
                 s = regex.stringByReplacingMatches(in: s, range: range, withTemplate: "")
             }
         }
-        // If multiple artists are separated by "•" or ",", take primary artist for clean lookup
         if let first = s.components(separatedBy: ",").first {
             s = first
         }
@@ -204,8 +195,7 @@ final class LyricsService {
 
     // MARK: - LRC & Plain Lyrics Parsers
 
-    /// Parses standard LRC format (`[mm:ss.xx] lyric text`) into sorted `LyricLine` array.
-    static func parseLRC(_ lrc: String, phoneticMode: PhoneticMode = .autoNonLatin) -> [LyricLine] {
+    public static func parseLRC(_ lrc: String, phoneticMode: PhoneticMode = .autoNonLatin) -> [LyricLine] {
         var lines: [LyricLine] = []
         let pattern = #"\[(\d{1,3}):(\d{2})(?:[.:](\d{1,3}))?\](.*)"#
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
@@ -240,8 +230,7 @@ final class LyricsService {
         return lines.sorted { $0.time < $1.time }
     }
 
-    /// Parses unsynced plain lyrics by pacing lines evenly across the track duration.
-    static func parsePlainLyrics(_ plain: String, duration: Double, phoneticMode: PhoneticMode = .autoNonLatin) -> [LyricLine] {
+    public static func parsePlainLyrics(_ plain: String, duration: Double, phoneticMode: PhoneticMode = .autoNonLatin) -> [LyricLine] {
         let nonEmpty = plain
             .components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespaces) }

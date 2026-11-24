@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import Combine
+import NyanyiCore
 
 final class OverlayPanel: NSPanel {
     override var canBecomeKey: Bool { true }

@@ -83,23 +83,28 @@ Nyanyi detects `music.youtube.com` tabs in Chrome, Arc, Brave, Edge, and Safari 
 
 ```
 nyanyi/
+├── .github/workflows/ci.yml             # GitHub Actions macOS CI (swift test + package.sh --dmg)
 ├── LICENSE                              # MIT License
 ├── Package.swift                        # Swift Package Manager manifest (macOS 13+)
 ├── Info.plist                           # App bundle metadata (LSUIElement + AppleEvents usage)
 ├── AppIcon.icns                         # macOS application icon
-├── package.sh                           # Builds Nyanyi.app and optional Nyanyi.dmg
+├── package.sh                           # Builds Nyanyi.app and optional Nyanyi.dmg (macOS)
 ├── install.sh                           # One-line curl installer to /Applications
-└── Sources/Nyanyi/
-    ├── NyanyiApp.swift                  # @main entry point (.accessory activation policy)
-    ├── AppDelegate.swift                # Menu bar item, Display / Player Source / Phonetics menus
-    ├── DisplaySettings.swift            # Persisted display mode, corner position, source, phonetic mode
-    ├── PlayerMonitor.swift              # Spotify AppleScript + YouTube Music Browser/Desktop polling + 4Hz interpolation
-    ├── LyricsService.swift              # LRCLIB client, YouTube/Spotify title cleaner, LRC + plainLyrics parser
-    ├── PhoneticConverter.swift          # Universal script detector & ICU CFStringTransform romanizer
-    ├── LyricsViewModel.swift            # Combine coordinator bridging PlayerMonitor, LyricsService, and UI
-    ├── OverlayWindowController.swift    # Always-on-top NSPanel with corner magnetic snap
-    ├── ContentView.swift                # SwiftUI HUD card with source badge & ruby phonetic annotations
-    └── MenuBarTicker.swift              # Core Animation marquee ticker in NSStatusBarButton
+├── Sources/
+│   ├── NyanyiCore/                      # Core lyrics, phonetics, and player monitor module
+│   │   ├── DisplaySettings.swift        # Persisted display mode, corner position, source, phonetic mode
+│   │   ├── LyricsService.swift          # LRCLIB client, YouTube/Spotify title cleaner, LRC + plainLyrics parser
+│   │   ├── LyricsViewModel.swift        # Combine coordinator bridging PlayerMonitor, LyricsService, and UI
+│   │   ├── PhoneticConverter.swift      # Universal script detector & ICU CFStringTransform romanizer
+│   │   └── PlayerMonitor.swift          # Spotify AppleScript + YouTube Music Browser/Desktop polling + 4Hz interpolation
+│   └── Nyanyi/                          # AppKit + SwiftUI executable target
+│       ├── NyanyiApp.swift              # @main entry point (.accessory activation policy)
+│       ├── AppDelegate.swift            # Menu bar item, Display / Player Source / Phonetics menus
+│       ├── OverlayWindowController.swift# Always-on-top NSPanel with corner magnetic snap
+│       ├── ContentView.swift            # SwiftUI HUD card with source badge & ruby phonetic annotations
+│       └── MenuBarTicker.swift          # Core Animation marquee ticker in NSStatusBarButton
+└── Tests/NyanyiTests/
+    └── NyanyiTests.swift                # Unit tests for multi-language phonetics, LRC parsing, & player parsers
 ```
 
 ---

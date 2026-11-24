@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import NyanyiCore
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!

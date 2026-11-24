@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import NyanyiCore
 
 // MARK: - Native AppKit Visual Effect Background
 

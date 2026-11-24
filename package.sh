@@ -1,6 +1,18 @@
 #!/bin/bash
 set -e
 
+if [ "$(uname -s)" != "Darwin" ]; then
+    echo "Error: Nyanyi is a native macOS application (SwiftUI + AppKit) and must be built on macOS."
+    echo "Current OS detected: $(uname -s) ($(hostname))."
+    echo "To build on Linux/server, push to GitHub Actions (macos-14 runner) or run ./package.sh on your Mac."
+    exit 1
+fi
+
+if ! command -v swift >/dev/null 2>&1; then
+    echo "Error: 'swift' toolchain not found. Install Xcode Command Line Tools with: xcode-select --install"
+    exit 1
+fi
+
 APP_NAME="Nyanyi"
 BUILD_DIR=".build/release"
 APP_BUNDLE="${APP_NAME}.app"

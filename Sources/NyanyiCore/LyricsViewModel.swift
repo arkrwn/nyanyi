@@ -1,21 +1,21 @@
 import Foundation
 import Combine
 
-final class LyricsViewModel: ObservableObject {
-    @Published var lines: [LyricLine] = []
-    @Published var currentLineIndex: Int?
-    @Published var trackTitle: String = ""
-    @Published var artist: String = ""
-    @Published var activeSourceName: String = ""
-    @Published var isLoading: Bool = false
-    @Published var isPlaying: Bool = false
+public final class LyricsViewModel: ObservableObject {
+    @Published public var lines: [LyricLine] = []
+    @Published public var currentLineIndex: Int?
+    @Published public var trackTitle: String = ""
+    @Published public var artist: String = ""
+    @Published public var activeSourceName: String = ""
+    @Published public var isLoading: Bool = false
+    @Published public var isPlaying: Bool = false
 
-    let playerMonitor = PlayerMonitor()
-    let displaySettings = DisplaySettings()
+    public let playerMonitor = PlayerMonitor()
+    public let displaySettings = DisplaySettings()
     private var cancellables = Set<AnyCancellable>()
     private var fetchTask: Task<Void, Never>?
 
-    init() {
+    public init() {
         playerMonitor.sourcePreference = displaySettings.sourcePreference
 
         displaySettings.$sourcePreference
@@ -92,7 +92,7 @@ final class LyricsViewModel: ObservableObject {
         }
     }
 
-    private func updateActiveLine(for position: Double) {
+    public func updateActiveLine(for position: Double) {
         guard !lines.isEmpty else {
             if currentLineIndex != nil { currentLineIndex = nil }
             return

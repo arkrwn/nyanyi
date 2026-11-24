@@ -1,27 +1,41 @@
 import Foundation
 import Combine
 
-struct TrackInfo: Equatable {
-    let title: String
-    let artist: String
-    let album: String
-    let duration: Double       // seconds (0 if unknown)
-    let sourceName: String     // e.g. "Spotify", "YouTube Music (Chrome)", "YouTube Music (App)"
+public struct TrackInfo: Equatable {
+    public let title: String
+    public let artist: String
+    public let album: String
+    public let duration: Double       // seconds (0 if unknown)
+    public let sourceName: String     // e.g. "Spotify", "YouTube Music (Chrome)", "YouTube Music (App)"
+
+    public init(title: String, artist: String, album: String, duration: Double, sourceName: String) {
+        self.title = title
+        self.artist = artist
+        self.album = album
+        self.duration = duration
+        self.sourceName = sourceName
+    }
 }
 
-struct PlayerSnapshot {
-    let track: TrackInfo
-    let position: Double
-    let isPlaying: Bool
+public struct PlayerSnapshot: Equatable {
+    public let track: TrackInfo
+    public let position: Double
+    public let isPlaying: Bool
+
+    public init(track: TrackInfo, position: Double, isPlaying: Bool) {
+        self.track = track
+        self.position = position
+        self.isPlaying = isPlaying
+    }
 }
 
-final class PlayerMonitor: ObservableObject {
-    @Published var currentTrack: TrackInfo?
-    @Published var playerPosition: Double = 0
-    @Published var isPlaying: Bool = false
-    @Published var activeSourceName: String = ""
+public final class PlayerMonitor: ObservableObject {
+    @Published public var currentTrack: TrackInfo?
+    @Published public var playerPosition: Double = 0
+    @Published public var isPlaying: Bool = false
+    @Published public var activeSourceName: String = ""
 
-    var sourcePreference: PlayerSourcePreference = .auto
+    public var sourcePreference: PlayerSourcePreference = .auto
 
     private var pollTimer: Timer?
     private var interpolationTimer: Timer?
@@ -29,27 +43,27 @@ final class PlayerMonitor: ObservableObject {
     private var lastPollTimestamp: Date = Date()
     private let pollQueue = DispatchQueue(label: "id.arkrwn.nyanyi.player-poll", qos: .utility)
 
-    init() {
-        startMonitoring()
+    public init(autoStart: Bool = true) {
+        if autoStart {
+            startMonitoring()
+        }
     }
 
     deinit {
         stopMonitoring()
     }
 
-    func startMonitoring() {
-        // Poll active players every 1.0s on a background queue
+    public func startMonitoring() {
         pollTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             self?.pollPlayers()
         }
-        // Interpolate position at ~4 Hz for responsive lyric highlighting
         interpolationTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
             self?.interpolatePosition()
         }
         pollPlayers()
     }
 
-    func stopMonitoring() {
+    public func stopMonitoring() {
         pollTimer?.invalidate()
         pollTimer = nil
         interpolationTimer?.invalidate()
@@ -102,7 +116,6 @@ final class PlayerMonitor: ObservableObject {
             if let y = ytmSnap, y.isPlaying {
                 return y
             }
-            // If neither is actively playing, prefer whichever has a loaded paused track
             return spotifySnap ?? ytmSnap
         }
     }
@@ -130,11 +143,12 @@ final class PlayerMonitor: ObservableObject {
     """
 
     private func querySpotify() -> PlayerSnapshot? {
-        guard let raw = runAppleScript(Self.spotifyScriptSource),
-              raw != "not_running", raw != "stopped" else {
-            return nil
-        }
+        guard let raw = runAppleScript(Self.spotifyScriptSource) else { return nil }
+        return Self.parseSpotifyAppleScriptResult(raw)
+    }
 
+    public static func parseSpotifyAppleScriptResult(_ raw: String) -> PlayerSnapshot? {
+        guard raw != "not_running", raw != "stopped" else { return nil }
         let parts = raw.components(separatedBy: "|||")
         guard parts.count == 6 else { return nil }
 
@@ -144,8 +158,8 @@ final class PlayerMonitor: ObservableObject {
         let album = parts[3].trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty else { return nil }
 
-        let durationMs = Self.parseDouble(parts[4])
-        let position = Self.parseDouble(parts[5])
+        let durationMs = parseDouble(parts[4])
+        let position = parseDouble(parts[5])
 
         let track = TrackInfo(
             title: title,
@@ -164,11 +178,9 @@ final class PlayerMonitor: ObservableObject {
     // MARK: - 2. YouTube Music (Desktop Companion API + Browser Tabs)
 
     private func queryYouTubeMusic() -> PlayerSnapshot? {
-        // First check YouTube Music Desktop App local companion server (if running on 127.0.0.1:26538 or 9863)
         if let desktopSnap = queryYouTubeMusicDesktopAPI() {
             return desktopSnap
         }
-        // Check Chromium-family browsers and Safari for an open music.youtube.com tab
         let chromiumBrowsers = [
             "Google Chrome",
             "Arc",
@@ -188,7 +200,6 @@ final class PlayerMonitor: ObservableObject {
         return nil
     }
 
-    /// Queries th-ch/youtube-music or ytmdesktop local HTTP companion API if active.
     private func queryYouTubeMusicDesktopAPI() -> PlayerSnapshot? {
         guard let url = URL(string: "http://127.0.0.1:26538/api/v1/song-info") else { return nil }
         var request = URLRequest(url: url)
@@ -202,41 +213,46 @@ final class PlayerMonitor: ObservableObject {
             guard error == nil,
                   let http = response as? HTTPURLResponse,
                   (200...299).contains(http.statusCode),
-                  let data = data,
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                  let data = data else {
                 return
             }
-
-            let title = (json["title"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            let artist = (json["artist"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            let album = (json["album"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !title.isEmpty else { return }
-
-            let isPaused = (json["isPaused"] as? Bool) ?? false
-            let elapsedSeconds = (json["elapsedSeconds"] as? Double)
-                ?? Double(json["elapsedSeconds"] as? Int ?? 0)
-            let songDuration = (json["songDuration"] as? Double)
-                ?? Double(json["songDuration"] as? Int ?? 0)
-
-            let track = TrackInfo(
-                title: title,
-                artist: artist,
-                album: album,
-                duration: songDuration,
-                sourceName: "YouTube Music (App)"
-            )
-            snapshot = PlayerSnapshot(
-                track: track,
-                position: elapsedSeconds,
-                isPlaying: !isPaused
-            )
+            snapshot = Self.parseYouTubeMusicDesktopJSON(data)
         }
         task.resume()
         _ = semaphore.wait(timeout: .now() + 0.4)
         return snapshot
     }
 
-    /// JS snippet executed inside a `music.youtube.com` tab to extract exact DOM title, artist, album, currentTime, duration, and paused state.
+    public static func parseYouTubeMusicDesktopJSON(_ data: Data) -> PlayerSnapshot? {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+
+        let title = (json["title"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let artist = (json["artist"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let album = (json["album"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else { return nil }
+
+        let isPaused = (json["isPaused"] as? Bool) ?? false
+        let elapsedSeconds = (json["elapsedSeconds"] as? Double)
+            ?? Double(json["elapsedSeconds"] as? Int ?? 0)
+        let songDuration = (json["songDuration"] as? Double)
+            ?? Double(json["songDuration"] as? Int ?? 0)
+
+        let track = TrackInfo(
+            title: title,
+            artist: artist,
+            album: album,
+            duration: songDuration,
+            sourceName: "YouTube Music (App)"
+        )
+        return PlayerSnapshot(
+            track: track,
+            position: elapsedSeconds,
+            isPlaying: !isPaused
+        )
+    }
+
     private static let ytmExtractionJS: String = [
         "(function(){",
         "var v = document.querySelector('video');",
@@ -323,7 +339,7 @@ final class PlayerMonitor: ObservableObject {
         return parseYouTubeMusicAppleScriptResult(raw, sourceLabel: "YouTube Music (Safari)")
     }
 
-    private func parseYouTubeMusicAppleScriptResult(_ raw: String, sourceLabel: String) -> PlayerSnapshot? {
+    public func parseYouTubeMusicAppleScriptResult(_ raw: String, sourceLabel: String) -> PlayerSnapshot? {
         if raw.hasPrefix("JS|||") {
             let payload = String(raw.dropFirst("JS|||".count))
             let parts = payload.components(separatedBy: "|||")
@@ -363,7 +379,6 @@ final class PlayerMonitor: ObservableObject {
             let parsed = Self.parseTabTitle(tabTitle)
             guard !parsed.title.isEmpty else { return nil }
 
-            // When browser Apple Events JS is not yet enabled, advance elapsed position smoothly for the same track
             let isSameTrack = (currentTrack?.title == parsed.title && currentTrack?.artist == parsed.artist)
             let estimatedPos = isSameTrack ? playerPosition : 0
 
@@ -384,8 +399,7 @@ final class PlayerMonitor: ObservableObject {
         return nil
     }
 
-    /// Parses a browser tab title like `"Song Title - Artist Name - YouTube Music"` or `"▶ Song Title - Artist - YouTube Music"`.
-    private static func parseTabTitle(_ rawTitle: String) -> (title: String, artist: String) {
+    public static func parseTabTitle(_ rawTitle: String) -> (title: String, artist: String) {
         var cleaned = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         if cleaned.hasPrefix("▶") || cleaned.hasPrefix("⏸") {
             cleaned = String(cleaned.dropFirst()).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -416,7 +430,7 @@ final class PlayerMonitor: ObservableObject {
         return output.stringValue
     }
 
-    private static func parseDouble(_ str: String) -> Double {
+    public static func parseDouble(_ str: String) -> Double {
         let normalized = str.replacingOccurrences(of: ",", with: ".")
         return Double(normalized) ?? 0
     }
