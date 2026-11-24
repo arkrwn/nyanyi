@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleExecutable</key>
+    <string>Nyanyi</string>
+    <key>CFBundleIdentifier</key>
+    <string>id.arkrwn.nyanyi</string>
+    <key>CFBundleName</key>
+    <string>Nyanyi</string>
+    <key>CFBundleDisplayName</key>
+    <string>Nyanyi</string>
+    <key>CFBundleVersion</key>
+    <string>1.0.0</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0.0</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>13.0</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
+    <key>LSUIElement</key>
+    <true/>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>Nyanyi needs access to Spotify and your browser or YouTube Music app to read the currently playing song and playback position.</string>
+</dict>
+</plist>
