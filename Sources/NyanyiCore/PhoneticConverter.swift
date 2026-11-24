@@ -94,16 +94,8 @@ public enum PhoneticConverter {
         case .korean:
             return annotateKorean(text)
         case .thai:
-            return annotateSegmentedLocale(text, localeIdentifier: "th", transform: kCFStringTransformLatinThai)
-        case .arabic:
-            return annotateWordLevel(text, transform: kCFStringTransformLatinArabic)
-        case .cyrillic:
-            return annotateWordLevel(text, transform: kCFStringTransformLatinCyrillic)
-        case .greek:
-            return annotateWordLevel(text, transform: kCFStringTransformLatinGreek)
-        case .hebrew:
-            return annotateWordLevel(text, transform: kCFStringTransformLatinHebrew)
-        case .devanagari, .otherNonLatin:
+            return annotateSegmentedLocale(text, localeIdentifier: "th")
+        case .arabic, .cyrillic, .greek, .hebrew, .devanagari, .otherNonLatin:
             return annotateWordLevelAnyLatin(text)
         }
     }
@@ -247,7 +239,7 @@ public enum PhoneticConverter {
 
     // MARK: - Word-Segmented Script (Thai)
 
-    private static func annotateSegmentedLocale(_ text: String, localeIdentifier: String, transform: CFString) -> [AnnotatedChar] {
+    private static func annotateSegmentedLocale(_ text: String, localeIdentifier: String) -> [AnnotatedChar] {
         let cfText = text as CFString
         let length = CFStringGetLength(cfText)
         guard length > 0 else { return [] }
@@ -281,7 +273,7 @@ public enum PhoneticConverter {
             } else if isPureASCII(word) {
                 result.append(AnnotatedChar(character: word, phonetic: ""))
             } else {
-                let latin = transliterate(word, transform: transform)
+                let latin = transliterateAnyLatin(word)
                 result.append(AnnotatedChar(character: word, phonetic: latin))
             }
         }
@@ -295,20 +287,6 @@ public enum PhoneticConverter {
     }
 
     // MARK: - Word-Level Alphabetic / Abjad / Abugida Scripts
-
-    private static func annotateWordLevel(_ text: String, transform: CFString) -> [AnnotatedChar] {
-        let tokens = tokenizeWordsPreservingSpaces(text)
-        return tokens.map { token in
-            if token.allSatisfy({ $0.isWhitespace }) {
-                return AnnotatedChar(character: " ", phonetic: "")
-            }
-            if token.allSatisfy({ $0.isPunctuation || $0.isSymbol }) || isPureASCII(token) {
-                return AnnotatedChar(character: token, phonetic: "")
-            }
-            let romanized = transliterate(token, transform: transform)
-            return AnnotatedChar(character: token, phonetic: romanized)
-        }
-    }
 
     private static func annotateWordLevelAnyLatin(_ text: String) -> [AnnotatedChar] {
         let tokens = tokenizeWordsPreservingSpaces(text)
@@ -326,19 +304,10 @@ public enum PhoneticConverter {
 
     // MARK: - Transliteration Helpers
 
-    private static func transliterate(_ text: String, transform: CFString) -> String {
-        let mutable = NSMutableString(string: text)
-        if !CFStringTransform(mutable, nil, transform, false) {
-            CFStringTransform(mutable, nil, "Any-Latin" as CFString, false)
-        }
-        CFStringTransform(mutable, nil, kCFStringTransformStripCombiningMarks, false)
-        let out = (mutable as String).trimmingCharacters(in: .whitespacesAndNewlines)
-        return out == text ? "" : out
-    }
-
     private static func transliterateAnyLatin(_ text: String) -> String {
         let mutable = NSMutableString(string: text)
-        CFStringTransform(mutable, nil, "Any-Latin; Latin-ASCII" as CFString, false)
+        CFStringTransform(mutable, nil, "Any-Latin" as CFString, false)
+        CFStringTransform(mutable, nil, kCFStringTransformStripCombiningMarks, false)
         let out = (mutable as String).trimmingCharacters(in: .whitespacesAndNewlines)
         return out == text ? "" : out
     }
