@@ -32,6 +32,7 @@ public struct PlayerSnapshot: Equatable {
 public final class PlayerMonitor: ObservableObject {
     @Published public var currentTrack: TrackInfo?
     @Published public var playerPosition: Double = 0
+    @Published public var trackDuration: Double = 0
     @Published public var isPlaying: Bool = false
     @Published public var activeSourceName: String = ""
     @Published public var browserInlineLyrics: [LyricLine] = []
@@ -75,6 +76,154 @@ public final class PlayerMonitor: ObservableObject {
         // Cap interpolation to 0.55s so a paused/loading track never runs ahead of actual audio
         guard elapsed <= 0.55 else { return }
         playerPosition = lastKnownPosition + elapsed
+    }
+
+    // MARK: - Playback & Seek Controls (YouTube Music Chrome, Spotify Web Chrome, & Spotify.app)
+
+    public func togglePlayPause() {
+        let optimisticallyPlaying = !isPlaying
+        isPlaying = optimisticallyPlaying
+        lastPollTimestamp = Date()
+
+        pollQueue.async { [weak self] in
+            guard let self else { return }
+            if self.isBundleRunning("com.google.Chrome") {
+                let js = [
+                    "(function(){",
+                    "var yBtn = document.querySelector('ytmusic-player-bar #play-pause-button');",
+                    "if (yBtn) { yBtn.click(); return 'ok'; }",
+                    "var sBtn = document.querySelector('[data-testid=\"control-button-playpause\"]');",
+                    "if (sBtn) { sBtn.click(); return 'ok'; }",
+                    "var v = document.querySelector('video');",
+                    "if (v) { if (v.paused) v.play(); else v.pause(); return 'ok'; }",
+                    "return '';",
+                    "})();"
+                ].joined(separator: " ")
+                if self.executeInChromeMusicTab(js: js) != nil {
+                    self.pollPlayers()
+                    return
+                }
+            }
+            if self.isBundleRunning("com.spotify.client") {
+                _ = self.runAppleScript("tell application \"Spotify\" to playpause")
+                self.pollPlayers()
+            }
+        }
+    }
+
+    public func nextTrack() {
+        pollQueue.async { [weak self] in
+            guard let self else { return }
+            if self.isBundleRunning("com.google.Chrome") {
+                let js = [
+                    "(function(){",
+                    "var yNext = document.querySelector('ytmusic-player-bar .next-button');",
+                    "if (yNext) { yNext.click(); return 'ok'; }",
+                    "var sNext = document.querySelector('[data-testid=\"control-button-skip-forward\"]');",
+                    "if (sNext) { sNext.click(); return 'ok'; }",
+                    "return '';",
+                    "})();"
+                ].joined(separator: " ")
+                if self.executeInChromeMusicTab(js: js) != nil {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { self.pollPlayers() }
+                    return
+                }
+            }
+            if self.isBundleRunning("com.spotify.client") {
+                _ = self.runAppleScript("tell application \"Spotify\" to next track")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { self.pollPlayers() }
+            }
+        }
+    }
+
+    public func previousTrack() {
+        pollQueue.async { [weak self] in
+            guard let self else { return }
+            if self.isBundleRunning("com.google.Chrome") {
+                let js = [
+                    "(function(){",
+                    "var yPrev = document.querySelector('ytmusic-player-bar .previous-button');",
+                    "if (yPrev) { yPrev.click(); return 'ok'; }",
+                    "var sPrev = document.querySelector('[data-testid=\"control-button-skip-back\"]');",
+                    "if (sPrev) { sPrev.click(); return 'ok'; }",
+                    "var v = document.querySelector('video');",
+                    "if (v) { v.currentTime = 0; return 'ok'; }",
+                    "return '';",
+                    "})();"
+                ].joined(separator: " ")
+                if self.executeInChromeMusicTab(js: js) != nil {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { self.pollPlayers() }
+                    return
+                }
+            }
+            if self.isBundleRunning("com.spotify.client") {
+                _ = self.runAppleScript("tell application \"Spotify\" to previous track")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { self.pollPlayers() }
+            }
+        }
+    }
+
+    public func seek(to seconds: Double) {
+        let maxDur = trackDuration > 0 ? trackDuration : max(seconds, 3600)
+        let clamped = min(max(0, seconds), maxDur)
+        lastKnownPosition = clamped
+        lastPollTimestamp = Date()
+        playerPosition = clamped
+
+        pollQueue.async { [weak self] in
+            guard let self else { return }
+            let targetSec = String(format: "%.2f", clamped)
+            if self.isBundleRunning("com.google.Chrome") {
+                let js = [
+                    "(function(){",
+                    "var mp = document.getElementById('movie_player');",
+                    "if (mp && typeof mp.seekTo === 'function') { mp.seekTo(\(targetSec), true); }",
+                    "var v = document.querySelector('video');",
+                    "if (v) { v.currentTime = \(targetSec); return 'ok'; }",
+                    "var a = document.querySelector('audio');",
+                    "if (a) { a.currentTime = \(targetSec); return 'ok'; }",
+                    "return '';",
+                    "})();"
+                ].joined(separator: " ")
+                if self.executeInChromeMusicTab(js: js) != nil {
+                    return
+                }
+            }
+            if self.isBundleRunning("com.spotify.client") {
+                _ = self.runAppleScript("tell application \"Spotify\" to set player position to \(targetSec)")
+            }
+        }
+    }
+
+    public func seekBy(delta secondsDelta: Double) {
+        seek(to: playerPosition + secondsDelta)
+    }
+
+    private func executeInChromeMusicTab(js: String) -> String? {
+        let escapedJS = js
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        let script = """
+        tell application "Google Chrome"
+            repeat with w in windows
+                set tabCount to count of tabs of w
+                repeat with i from 1 to tabCount
+                    set t to tab i of w
+                    set tURL to URL of t
+                    if tURL contains "music.youtube.com" or tURL contains "open.spotify.com" then
+                        try
+                            return execute t javascript "\(escapedJS)"
+                        on error
+                            return ""
+                        end try
+                    end if
+                end repeat
+            end repeat
+        end tell
+        return ""
+        """
+        guard let res = runAppleScript(script), !res.isEmpty else { return nil }
+        return res
     }
 
     /// Queries the browser tab (Google Chrome) for inline lyrics or auto-captions/subtitles of the current track.
@@ -193,6 +342,11 @@ public final class PlayerMonitor: ObservableObject {
                 let titleOrArtistChanged = (self.currentTrack?.title != snap.track.title || self.currentTrack?.artist != snap.track.artist)
                 if self.currentTrack != snap.track {
                     self.currentTrack = snap.track
+                }
+                if snap.track.duration > 0 {
+                    self.trackDuration = snap.track.duration
+                } else if titleOrArtistChanged {
+                    self.trackDuration = 0
                 }
 
                 if titleOrArtistChanged {

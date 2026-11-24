@@ -5,6 +5,7 @@ public enum DisplayMode: String, CaseIterable {
     case floating = "floating"
     case corner = "corner"
     case subtitle = "subtitle"
+    case bottomNavbar = "bottomNavbar"
     case menuBar = "menubar"
 
     public var label: String {
@@ -12,12 +13,17 @@ public enum DisplayMode: String, CaseIterable {
         case .floating: return "Floating Card"
         case .corner: return "Corner Card"
         case .subtitle: return "Subtitle (Movie Style)"
+        case .bottomNavbar: return "Bottom Navbar (Apple Bar)"
         case .menuBar: return "Menu Bar Ticker"
         }
     }
 
     public var isSubtitleStyle: Bool {
         self == .subtitle
+    }
+
+    public var isBottomNavbar: Bool {
+        self == .bottomNavbar
     }
 }
 
@@ -34,11 +40,12 @@ public enum OverlaySize: String, CaseIterable {
         }
     }
 
+    /// Re-calibrated smaller, sleeker scale factors so Small is genuinely compact
     public var scaleFactor: Double {
         switch self {
-        case .small: return 0.82
-        case .medium: return 1.0
-        case .large: return 1.25
+        case .small: return 0.65
+        case .medium: return 0.82
+        case .large: return 1.0
         }
     }
 }
@@ -60,10 +67,12 @@ public final class DisplaySettings: ObservableObject {
     @Published public var corner: CornerPosition {
         didSet { UserDefaults.standard.set(corner.rawValue, forKey: "cornerPosition") }
     }
+    @Published public var experimentalScrollSeek: Bool {
+        didSet { UserDefaults.standard.set(experimentalScrollSeek, forKey: "experimentalScrollSeek") }
+    }
 
     public init() {
         let savedMode = UserDefaults.standard.string(forKey: "displayMode") ?? ""
-        // Migrate legacy "subtitleBottom" / "subtitleTop" saved values seamlessly to `.subtitle`
         if savedMode == "subtitleBottom" || savedMode == "subtitleTop" {
             self.mode = .subtitle
         } else {
@@ -75,5 +84,11 @@ public final class DisplaySettings: ObservableObject {
 
         let savedCorner = UserDefaults.standard.string(forKey: "cornerPosition") ?? ""
         self.corner = CornerPosition(rawValue: savedCorner) ?? .bottomRight
+
+        if UserDefaults.standard.object(forKey: "experimentalScrollSeek") != nil {
+            self.experimentalScrollSeek = UserDefaults.standard.bool(forKey: "experimentalScrollSeek")
+        } else {
+            self.experimentalScrollSeek = true
+        }
     }
 }

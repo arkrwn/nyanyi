@@ -15,14 +15,18 @@ final class OverlayWindowController: NSWindowController {
         didSet { updateVisibilityForPlayState() }
     }
     private var dragMonitor: Any?
+    private var scrollMonitor: Any?
     private var screenObserver: Any?
     private var cancellables = Set<AnyCancellable>()
     private var hasPositionedSubtitle = false
+    private var scrollAccumulator: CGFloat = 0
+    private var lastScrollTriggerTime: Date = .distantPast
 
-    private static let baseFloatingSize = NSSize(width: 440, height: 340)
-    private static let baseCornerSize = NSSize(width: 380, height: 220)
-    private static let cornerMargin: CGFloat = 16
-    private static let subtitleBottomMargin: CGFloat = 36
+    // Re-calibrated smaller base dimensions so Small / Medium / Large feel sleek and unobtrusive
+    private static let baseFloatingSize = NSSize(width: 410, height: 300)
+    private static let baseCornerSize = NSSize(width: 340, height: 195)
+    private static let cornerMargin: CGFloat = 14
+    private static let subtitleBottomMargin: CGFloat = 32
 
     init(viewModel: LyricsViewModel, displaySettings: DisplaySettings) {
         self.viewModel = viewModel
@@ -37,7 +41,6 @@ final class OverlayWindowController: NSWindowController {
         )
 
         // Stay visible above all apps including full-screen spaces/videos
-        // NOTE: Do NOT include `.stationary`, because `.stationary` prevents macOS windows from being dragged by the mouse!
         panel.level = .screenSaver
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
         panel.hidesOnDeactivate = false
@@ -47,8 +50,8 @@ final class OverlayWindowController: NSWindowController {
         panel.hasShadow = true
         panel.isMovable = true
         panel.isMovableByWindowBackground = true
-        panel.minSize = NSSize(width: 240, height: 64)
-        panel.maxSize = NSSize(width: 1600, height: 900)
+        panel.minSize = NSSize(width: 220, height: 22)
+        panel.maxSize = NSSize(width: 3840, height: 1200)
 
         let hv = NSHostingView(
             rootView: ContentView(viewModel: viewModel, displaySettings: displaySettings)
@@ -60,6 +63,7 @@ final class OverlayWindowController: NSWindowController {
         positionBottomRight(size: initialSize)
         observeScreenChanges()
         observeEmptyStateForClickThrough()
+        installExperimentalScrollMonitor()
     }
 
     @available(*, unavailable)
@@ -69,6 +73,7 @@ final class OverlayWindowController: NSWindowController {
 
     deinit {
         removeDragMonitor()
+        removeScrollMonitor()
         if let observer = screenObserver {
             NotificationCenter.default.removeObserver(observer)
         }
@@ -79,16 +84,15 @@ final class OverlayWindowController: NSWindowController {
         return NSSize(width: round(base.width * factor), height: round(base.height * factor))
     }
 
-    /// Static fixed dimensions for Subtitle (Movie Style) mode per OverlaySize (Small, Medium, Large).
-    /// Never changes width/height when lyric lines change!
+    /// Re-calibrated static fixed dimensions for Subtitle (Movie Style) mode per OverlaySize (Small, Medium, Large).
     private static func subtitleStaticSize(for size: OverlaySize) -> NSSize {
         switch size {
         case .small:
-            return NSSize(width: 440, height: 76)
+            return NSSize(width: 340, height: 60)
         case .medium:
-            return NSSize(width: 580, height: 92)
+            return NSSize(width: 450, height: 74)
         case .large:
-            return NSSize(width: 740, height: 112)
+            return NSSize(width: 570, height: 90)
         }
     }
 
@@ -100,7 +104,7 @@ final class OverlayWindowController: NSWindowController {
         ) { [weak self] _ in
             guard let self else { return }
             let mode = self.displaySettings.mode
-            if mode == .corner {
+            if mode == .corner || mode == .bottomNavbar {
                 self.applyDisplayMode(mode)
             }
         }
@@ -120,6 +124,10 @@ final class OverlayWindowController: NSWindowController {
         guard let panel = window as? OverlayPanel else { return }
         guard displaySettings.mode != .menuBar else { return }
 
+        // Keep overlay visible when a track is loaded so the user can always click Play/Pause/Next/Prev!
+        // Only auto-minimize when paused if the user has not hovered over the overlay, OR keep it minimized after a pause delay.
+        // Wait: per user request ("kalau pause dia minimized otomatis, kalau di play dia muncul lagi otomatis"),
+        // we auto-minimize on pause and auto-show on play.
         let shouldShow = !isManuallyHidden && viewModel.isPlaying && !viewModel.trackTitle.isEmpty
         if shouldShow {
             panel.ignoresMouseEvents = false
@@ -135,7 +143,6 @@ final class OverlayWindowController: NSWindowController {
                 }
             }
         } else {
-            // Auto-minimize / hide overlay when paused or stopped so it never blocks the screen
             panel.ignoresMouseEvents = true
             if panel.isVisible && panel.alphaValue > 0.0 {
                 NSAnimationContext.runAnimationGroup({ ctx in
@@ -162,17 +169,16 @@ final class OverlayWindowController: NSWindowController {
         panel.level = .screenSaver
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
         panel.hidesOnDeactivate = false
-        panel.isMovable = true
-        panel.isMovableByWindowBackground = true
 
         let sizeSetting = displaySettings.size
 
         switch mode {
         case .floating:
             panel.styleMask.insert(.resizable)
-            panel.ignoresMouseEvents = false
+            panel.isMovable = true
+            panel.isMovableByWindowBackground = true
             panel.hasShadow = true
-            panel.minSize = NSSize(width: 260, height: 140)
+            panel.minSize = NSSize(width: 240, height: 130)
             panel.maxSize = NSSize(width: 1200, height: 900)
             let targetSize = Self.scaledSize(Self.baseFloatingSize, for: sizeSetting)
             NSAnimationContext.runAnimationGroup { ctx in
@@ -184,22 +190,55 @@ final class OverlayWindowController: NSWindowController {
 
         case .corner:
             panel.styleMask.remove(.resizable)
-            panel.ignoresMouseEvents = false
+            panel.isMovable = true
+            panel.isMovableByWindowBackground = true
             panel.hasShadow = true
             snapToCorner(displaySettings.corner, animated: true)
             installCornerDragMonitor()
 
         case .subtitle:
             panel.styleMask.remove(.resizable)
+            panel.isMovable = true
+            panel.isMovableByWindowBackground = true
             panel.hasShadow = true
-            let hasContent = !viewModel.lines.isEmpty || !viewModel.trackTitle.isEmpty
-            panel.ignoresMouseEvents = !hasContent
             applyStaticSubtitleFrame(initialPlacement: !hasPositionedSubtitle)
             hasPositionedSubtitle = true
             installSubtitleDragMonitor()
 
+        case .bottomNavbar:
+            panel.styleMask.remove(.resizable)
+            panel.isMovable = false
+            panel.isMovableByWindowBackground = false
+            panel.hasShadow = true
+            snapToBottomNavbar(animated: true)
+
         case .menuBar:
             break
+        }
+    }
+
+    /// Snaps the overlay to the very bottom edge of the screen with 100% screen width and exact Apple Menu Bar height.
+    private func snapToBottomNavbar(animated: Bool) {
+        guard let panel = window as? OverlayPanel,
+              let screen = panel.screen ?? NSScreen.main ?? NSScreen.screens.first else { return }
+
+        let fullFrame = screen.frame
+        let appleMenuBarHeight = max(28, NSStatusBar.system.thickness)
+        let targetFrame = NSRect(
+            x: fullFrame.minX,
+            y: fullFrame.minY,
+            width: fullFrame.width,
+            height: appleMenuBarHeight
+        )
+
+        if animated {
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.22
+                ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                panel.animator().setFrame(targetFrame, display: true)
+            }
+        } else {
+            panel.setFrame(targetFrame, display: true)
         }
     }
 
@@ -223,7 +262,6 @@ final class OverlayWindowController: NSWindowController {
                 centerY = sf.minY + Self.subtitleBottomMargin + (targetSize.height / 2.0)
             }
         } else {
-            // Preserve the current dragged center when changing Small / Medium / Large size
             centerX = panel.frame.midX
             centerY = panel.frame.midY
         }
@@ -238,6 +276,63 @@ final class OverlayWindowController: NSWindowController {
             panel.animator().setFrame(targetFrame, display: true)
         }
     }
+
+    // MARK: - [Experimental] Scroll Wheel to Seek Lyrics & YouTube Music / Spotify Playback
+
+    private func installExperimentalScrollMonitor() {
+        scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+            guard let self,
+                  self.displaySettings.experimentalScrollSeek,
+                  let panel = self.window,
+                  event.window == panel else {
+                return event
+            }
+
+            let dy = event.scrollingDeltaY
+            let dx = event.scrollingDeltaX
+            let primaryDelta = abs(dy) >= abs(dx) ? dy : dx
+            guard abs(primaryDelta) > 0.5 else { return event }
+
+            let mode = self.displaySettings.mode
+            if mode == .bottomNavbar {
+                // Experimental #2: In Bottom Navbar mode, scrolling scrubs music forward/backward smoothly
+                // and lyrics follow automatically!
+                let now = Date()
+                guard now.timeIntervalSince(self.lastScrollTriggerTime) >= 0.08 else { return nil }
+                self.lastScrollTriggerTime = now
+
+                let direction: Double = primaryDelta < 0 ? 1.0 : -1.0
+                let magnitude = min(max(Double(abs(primaryDelta)) * 0.25, 1.5), 8.0)
+                self.viewModel.seekBy(delta: direction * magnitude)
+                return nil
+            } else {
+                // Experimental #1: In non-Bottom Navbar modes (Floating, Corner, Subtitle),
+                // scrolling down advances to the next lyric line & seeks YouTube Music forward;
+                // scrolling up rewinds to the previous lyric line & seeks YouTube Music backward!
+                self.scrollAccumulator += primaryDelta
+                let threshold: CGFloat = event.hasPreciseScrollingDeltas ? 18.0 : 1.5
+                if abs(self.scrollAccumulator) >= threshold {
+                    let now = Date()
+                    if now.timeIntervalSince(self.lastScrollTriggerTime) >= 0.14 {
+                        let stepDirection = self.scrollAccumulator < 0 ? 1 : -1
+                        self.scrollAccumulator = 0
+                        self.lastScrollTriggerTime = now
+                        self.viewModel.stepLyricLine(direction: stepDirection)
+                    }
+                }
+                return nil
+            }
+        }
+    }
+
+    private func removeScrollMonitor() {
+        if let monitor = scrollMonitor {
+            NSEvent.removeMonitor(monitor)
+            scrollMonitor = nil
+        }
+    }
+
+    // MARK: - Drag Monitors
 
     private func installSubtitleDragMonitor() {
         var dragStartMouseLocation: NSPoint?
