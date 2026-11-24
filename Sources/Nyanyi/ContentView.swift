@@ -5,18 +5,22 @@ import NyanyiCore
 // MARK: - Native AppKit Visual Effect Background
 
 struct VisualEffectBackground: NSViewRepresentable {
+    var cornerRadius: CGFloat = 16
+
     func makeNSView(context: Context) -> NSVisualEffectView {
         let view = NSVisualEffectView()
         view.material = .hudWindow
         view.blendingMode = .behindWindow
         view.state = .active
         view.wantsLayer = true
-        view.layer?.cornerRadius = 16
+        view.layer?.cornerRadius = cornerRadius
         view.layer?.masksToBounds = true
         return view
     }
 
-    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
+    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
+        nsView.layer?.cornerRadius = cornerRadius
+    }
 }
 
 // MARK: - Main Overlay Content View
@@ -28,8 +32,102 @@ struct ContentView: View {
     private var isCompact: Bool { displaySettings.mode == .corner }
 
     var body: some View {
+        if displaySettings.mode.isSubtitleStyle {
+            movieSubtitleBarView
+        } else {
+            cardOverlayView
+        }
+    }
+
+    // MARK: - 1. Movie-Style Centered Single-Line Subtitle Mode (Top / Bottom)
+
+    private var movieSubtitleBarView: some View {
         ZStack {
-            VisualEffectBackground()
+            if let currentLine = activeSubtitleLine {
+                VStack(spacing: 2) {
+                    if currentLine.hasPhonetics {
+                        movieSubtitleAnnotatedLine(currentLine)
+                    } else {
+                        Text(currentLine.text)
+                            .font(.system(size: 22, weight: .bold, design: .rounded))
+                            .foregroundColor(.white)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.55)
+                            .multilineTextAlignment(.center)
+                    }
+                }
+                .padding(.horizontal, 22)
+                .padding(.vertical, 10)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(Color.black.opacity(0.68))
+                )
+                .overlay(
+                    Capsule(style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.14), lineWidth: 1)
+                )
+                .shadow(color: .black.opacity(0.65), radius: 8, y: 2)
+                .transition(.opacity)
+                .animation(.easeInOut(duration: 0.2), value: currentLine.id)
+            } else if !viewModel.trackTitle.isEmpty {
+                HStack(spacing: 8) {
+                    Circle()
+                        .fill(viewModel.isPlaying ? Color.green : Color.gray.opacity(0.5))
+                        .frame(width: 7, height: 7)
+                    Text("\(viewModel.trackTitle)\(viewModel.artist.isEmpty ? "" : " - \(viewModel.artist)")")
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        .foregroundColor(.white.opacity(0.85))
+                        .lineLimit(1)
+                }
+                .padding(.horizontal, 18)
+                .padding(.vertical, 8)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(Color.black.opacity(0.6))
+                )
+                .shadow(color: .black.opacity(0.55), radius: 6, y: 2)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+    }
+
+    private var activeSubtitleLine: LyricLine? {
+        guard !viewModel.lines.isEmpty else { return nil }
+        if let idx = viewModel.currentLineIndex, idx >= 0, idx < viewModel.lines.count {
+            return viewModel.lines[idx]
+        }
+        return viewModel.lines.first
+    }
+
+    private func movieSubtitleAnnotatedLine(_ line: LyricLine) -> some View {
+        HStack(spacing: 4) {
+            ForEach(Array(line.annotations.enumerated()), id: \.offset) { _, item in
+                if item.character == " " {
+                    Spacer().frame(width: 7)
+                } else {
+                    VStack(spacing: 0) {
+                        Text(item.phonetic)
+                            .font(.system(size: 11, weight: .semibold, design: .rounded))
+                            .foregroundColor(Color(red: 0.60, green: 0.88, blue: 1.0))
+                            .lineLimit(1)
+                            .fixedSize()
+
+                        Text(item.character)
+                            .font(.system(size: 21, weight: .bold, design: .rounded))
+                            .foregroundColor(.white)
+                            .lineLimit(1)
+                            .fixedSize()
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - 2. Multi-Line Card Overlay Mode (Floating / Corner)
+
+    private var cardOverlayView: some View {
+        ZStack {
+            VisualEffectBackground(cornerRadius: 16)
 
             VStack(spacing: 0) {
                 headerBar

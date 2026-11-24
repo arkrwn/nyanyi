@@ -17,25 +17,6 @@ public final class LyricsViewModel: ObservableObject {
     private var fetchTask: Task<Void, Never>?
 
     public init() {
-        playerMonitor.sourcePreference = displaySettings.sourcePreference
-
-        displaySettings.$sourcePreference
-            .removeDuplicates()
-            .sink { [weak self] pref in
-                self?.playerMonitor.sourcePreference = pref
-            }
-            .store(in: &cancellables)
-
-        displaySettings.$phoneticMode
-            .dropFirst()
-            .removeDuplicates()
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] mode in
-                guard let self else { return }
-                self.lines = self.lines.map { $0.withPhoneticMode(mode) }
-            }
-            .store(in: &cancellables)
-
         playerMonitor.$currentTrack
             .removeDuplicates()
             .receive(on: DispatchQueue.main)
@@ -80,9 +61,8 @@ public final class LyricsViewModel: ObservableObject {
         currentLineIndex = nil
         isLoading = true
 
-        let phoneticMode = displaySettings.phoneticMode
         fetchTask = Task { @MainActor [weak self] in
-            let fetched = await LyricsService.shared.fetchLyrics(track: track, phoneticMode: phoneticMode)
+            let fetched = await LyricsService.shared.fetchLyrics(track: track)
             guard !Task.isCancelled, let self = self else { return }
             self.lines = fetched
             self.isLoading = false

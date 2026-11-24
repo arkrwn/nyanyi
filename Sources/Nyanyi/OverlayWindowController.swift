@@ -11,10 +11,13 @@ final class OverlayPanel: NSPanel {
 final class OverlayWindowController: NSWindowController {
     private let displaySettings: DisplaySettings
     private var dragEndMonitor: Any?
+    private var screenObserver: Any?
 
     private static let floatingSize = NSSize(width: 440, height: 340)
     private static let cornerSize = NSSize(width: 380, height: 220)
+    private static let subtitleHeight: CGFloat = 96
     private static let cornerMargin: CGFloat = 16
+    private static let subtitleVerticalMargin: CGFloat = 36
 
     init(viewModel: LyricsViewModel, displaySettings: DisplaySettings) {
         self.displaySettings = displaySettings
@@ -26,14 +29,17 @@ final class OverlayWindowController: NSWindowController {
             defer: false
         )
 
-        panel.level = .floating
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        // Stay visible above all apps including full-screen spaces/videos
+        panel.level = .screenSaver
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+        panel.hidesOnDeactivate = false
+        panel.isFloatingPanel = true
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
         panel.isMovableByWindowBackground = true
-        panel.minSize = NSSize(width: 280, height: 150)
-        panel.maxSize = NSSize(width: 900, height: 800)
+        panel.minSize = NSSize(width: 280, height: 80)
+        panel.maxSize = NSSize(width: 1600, height: 800)
 
         let hostingView = NSHostingView(
             rootView: ContentView(viewModel: viewModel, displaySettings: displaySettings)
@@ -43,6 +49,7 @@ final class OverlayWindowController: NSWindowController {
         super.init(window: panel)
 
         positionBottomRight(size: Self.floatingSize)
+        observeScreenChanges()
     }
 
     @available(*, unavailable)
@@ -52,15 +59,40 @@ final class OverlayWindowController: NSWindowController {
 
     deinit {
         removeDragMonitor()
+        if let observer = screenObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+    }
+
+    private func observeScreenChanges() {
+        screenObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            let mode = self.displaySettings.mode
+            if mode == .subtitleBottom || mode == .subtitleTop || mode == .corner {
+                self.applyDisplayMode(mode)
+            }
+        }
     }
 
     func applyDisplayMode(_ mode: DisplayMode) {
         guard let panel = window as? OverlayPanel else { return }
         removeDragMonitor()
 
+        // Ensure full-screen visibility properties remain active across mode switches
+        panel.level = .screenSaver
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+        panel.hidesOnDeactivate = false
+
         switch mode {
         case .floating:
             panel.styleMask.insert(.resizable)
+            panel.ignoresMouseEvents = false
+            panel.isMovableByWindowBackground = true
+            panel.hasShadow = true
             panel.minSize = NSSize(width: 280, height: 150)
             panel.maxSize = NSSize(width: 900, height: 800)
             NSAnimationContext.runAnimationGroup { ctx in
@@ -72,11 +104,55 @@ final class OverlayWindowController: NSWindowController {
 
         case .corner:
             panel.styleMask.remove(.resizable)
+            panel.ignoresMouseEvents = false
+            panel.isMovableByWindowBackground = true
+            panel.hasShadow = true
             snapToCorner(displaySettings.corner, animated: true)
             installDragMonitor()
 
+        case .subtitleBottom:
+            panel.styleMask.remove(.resizable)
+            panel.hasShadow = false
+            panel.isMovableByWindowBackground = true
+            snapToSubtitleEdge(top: false, animated: true)
+
+        case .subtitleTop:
+            panel.styleMask.remove(.resizable)
+            panel.hasShadow = false
+            panel.isMovableByWindowBackground = true
+            snapToSubtitleEdge(top: true, animated: true)
+
         case .menuBar:
             break
+        }
+    }
+
+    private func snapToSubtitleEdge(top: Bool, animated: Bool) {
+        guard let screen = NSScreen.main ?? NSScreen.screens.first,
+              let panel = window else { return }
+        let vf = screen.visibleFrame
+        let fullFrame = screen.frame
+        let width = min(max(vf.width * 0.72, 560), 1100)
+        let height = Self.subtitleHeight
+        let x = fullFrame.midX - (width / 2.0)
+
+        let y: CGFloat
+        if top {
+            // Respect menu bar height when visible, or sit near top edge in full-screen
+            y = vf.maxY - height - 14
+        } else {
+            y = max(vf.minY + 18, fullFrame.minY + Self.subtitleVerticalMargin)
+        }
+
+        let targetFrame = NSRect(x: x, y: y, width: width, height: height)
+        if animated {
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.25
+                ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                panel.animator().setFrame(targetFrame, display: true)
+            }
+        } else {
+            panel.setFrame(targetFrame, display: true)
         }
     }
 

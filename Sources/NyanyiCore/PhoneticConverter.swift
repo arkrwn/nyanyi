@@ -73,19 +73,15 @@ public enum PhoneticConverter {
         return .latin
     }
 
-    /// Annotates a line of lyrics into word/character tokens with optional phonetic romanization above non-Latin scripts.
-    public static func annotate(_ text: String, mode: PhoneticMode = .autoNonLatin) -> [AnnotatedChar] {
+    /// Automatically annotates a line of lyrics across all languages:
+    /// - Latin-script lines render cleanly without redundant phonetic clutter.
+    /// - Non-Latin scripts (Chinese, Japanese, Korean, Arabic, Cyrillic, Thai, Indic, Greek, Hebrew, etc.) are automatically romanized.
+    public static func annotate(_ text: String) -> [AnnotatedChar] {
         guard !text.isEmpty else { return [] }
-        if mode == .off {
-            return annotateLatinOnly(text)
-        }
 
         let script = detectScript(text)
         switch script {
         case .latin:
-            if mode == .allScripts {
-                return annotateLatinNormalized(text)
-            }
             return annotateLatinOnly(text)
         case .chinese:
             return annotateChinese(text)
@@ -105,18 +101,6 @@ public enum PhoneticConverter {
     private static func annotateLatinOnly(_ text: String) -> [AnnotatedChar] {
         let tokens = tokenizeWordsPreservingSpaces(text)
         return tokens.map { AnnotatedChar(character: $0, phonetic: "") }
-    }
-
-    private static func annotateLatinNormalized(_ text: String) -> [AnnotatedChar] {
-        let tokens = tokenizeWordsPreservingSpaces(text)
-        return tokens.map { token in
-            let stripped = stripDiacritics(token).lowercased()
-            let lowerOrig = token.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            if stripped != lowerOrig && !stripped.isEmpty {
-                return AnnotatedChar(character: token, phonetic: stripped)
-            }
-            return AnnotatedChar(character: token, phonetic: "")
-        }
     }
 
     // MARK: - Chinese (Hanzi -> Pinyin with tones)
@@ -310,12 +294,6 @@ public enum PhoneticConverter {
         CFStringTransform(mutable, nil, kCFStringTransformStripCombiningMarks, false)
         let out = (mutable as String).trimmingCharacters(in: .whitespacesAndNewlines)
         return out == text ? "" : out
-    }
-
-    private static func stripDiacritics(_ text: String) -> String {
-        let mutable = NSMutableString(string: text)
-        CFStringTransform(mutable, nil, kCFStringTransformStripCombiningMarks, false)
-        return (mutable as String).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private static func tokenizeWordsPreservingSpaces(_ text: String) -> [String] {

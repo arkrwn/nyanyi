@@ -19,48 +19,54 @@ final class NyanyiTests: XCTestCase {
         XCTAssertEqual(PhoneticConverter.detectScript("שלום עולם"), .hebrew)
     }
 
-    // MARK: - Phonetic Romanization
+    // MARK: - Automatic Phonetic Romanization
 
-    func testLatinScriptAutoModeHasNoRedundantPhonetics() {
-        let tokens = PhoneticConverter.annotate("Jangan pernah menyerah", mode: .autoNonLatin)
+    func testLatinScriptHasNoRedundantPhonetics() {
+        let tokens = PhoneticConverter.annotate("Jangan pernah menyerah")
         XCTAssertFalse(tokens.isEmpty)
         XCTAssertTrue(tokens.allSatisfy { $0.phonetic.isEmpty })
     }
 
     func testChinesePinyinAnnotation() {
-        let tokens = PhoneticConverter.annotate("你好", mode: .autoNonLatin)
+        let tokens = PhoneticConverter.annotate("你好")
         XCTAssertEqual(tokens.count, 2)
         XCTAssertFalse(tokens[0].phonetic.isEmpty)
         XCTAssertFalse(tokens[1].phonetic.isEmpty)
     }
 
     func testJapaneseRomajiAnnotation() {
-        let tokens = PhoneticConverter.annotate("さくら", mode: .autoNonLatin)
+        let tokens = PhoneticConverter.annotate("さくら")
         XCTAssertFalse(tokens.isEmpty)
         XCTAssertTrue(tokens.contains { !$0.phonetic.isEmpty })
     }
 
     func testKoreanHangulAnnotation() {
-        let tokens = PhoneticConverter.annotate("사랑", mode: .autoNonLatin)
+        let tokens = PhoneticConverter.annotate("사랑")
         XCTAssertEqual(tokens.count, 2)
         XCTAssertFalse(tokens[0].phonetic.isEmpty)
         XCTAssertFalse(tokens[1].phonetic.isEmpty)
     }
 
     func testNonLatinWordLevelAnnotations() {
-        let cyrillic = PhoneticConverter.annotate("Привет мир", mode: .autoNonLatin)
+        let cyrillic = PhoneticConverter.annotate("Привет мир")
         XCTAssertTrue(cyrillic.contains { !$0.phonetic.isEmpty })
 
-        let arabic = PhoneticConverter.annotate("مرحبا", mode: .autoNonLatin)
+        let arabic = PhoneticConverter.annotate("مرحبا")
         XCTAssertTrue(arabic.contains { !$0.phonetic.isEmpty })
 
-        let thai = PhoneticConverter.annotate("สวัสดี", mode: .autoNonLatin)
+        let thai = PhoneticConverter.annotate("สวัสดี")
         XCTAssertTrue(thai.contains { !$0.phonetic.isEmpty })
     }
 
-    func testPhoneticModeOffDisablesAnnotations() {
-        let tokens = PhoneticConverter.annotate("你好世界", mode: .off)
-        XCTAssertTrue(tokens.allSatisfy { $0.phonetic.isEmpty })
+    // MARK: - Display Modes (Including Movie Subtitle Top & Bottom)
+
+    func testDisplayModesIncludeMovieSubtitles() {
+        XCTAssertTrue(DisplayMode.subtitleBottom.isSubtitleStyle)
+        XCTAssertTrue(DisplayMode.subtitleTop.isSubtitleStyle)
+        XCTAssertFalse(DisplayMode.floating.isSubtitleStyle)
+        XCTAssertFalse(DisplayMode.corner.isSubtitleStyle)
+        XCTAssertFalse(DisplayMode.menuBar.isSubtitleStyle)
+        XCTAssertEqual(DisplayMode.allCases.count, 5)
     }
 
     // MARK: - LRC & Plain Lyrics Parsing
@@ -71,7 +77,7 @@ final class NyanyiTests: XCTestCase {
         [00:18.25] 你好世界
         [01:02.100] Baris ketiga
         """
-        let lines = LyricsService.parseLRC(sampleLRC, phoneticMode: .autoNonLatin)
+        let lines = LyricsService.parseLRC(sampleLRC)
         XCTAssertEqual(lines.count, 3)
         XCTAssertEqual(lines[0].time, 12.50, accuracy: 0.01)
         XCTAssertEqual(lines[0].text, "Baris pertama lagu")
@@ -90,7 +96,7 @@ final class NyanyiTests: XCTestCase {
         Second line
         Third line
         """
-        let lines = LyricsService.parsePlainLyrics(plain, duration: 90, phoneticMode: .autoNonLatin)
+        let lines = LyricsService.parsePlainLyrics(plain, duration: 90)
         XCTAssertEqual(lines.count, 3)
         XCTAssertEqual(lines[0].time, 0.0, accuracy: 0.01)
         XCTAssertGreaterThan(lines[1].time, lines[0].time)

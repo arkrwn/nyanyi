@@ -11,27 +11,29 @@ Released under the [MIT License](LICENSE).
 
 ## Features
 
-- **Spotify + YouTube Music on macOS**
+- **100% Automatic Player Detection (Spotify + YouTube Music on macOS)**
+  - Zero manual player selection needed: Nyanyi automatically detects whichever player is actively playing.
   - **Spotify**: Native macOS `Spotify.app` integration via AppleScript (`tell application "Spotify"`).
   - **YouTube Music (Web Browsers)**: Automatic tab detection for `music.youtube.com` across **Google Chrome**, **Arc**, **Brave Browser**, **Microsoft Edge**, **Safari**, **Chromium**, and **Vivaldi** (reads track title, artist, album, and `<video>` playback position, with automatic tab-title fallback).
   - **YouTube Music Desktop App**: Supports `th-ch/youtube-music` / `ytmdesktop` local companion API (`http://127.0.0.1:26538/api/v1/song-info`).
-  - **Source Selector**: Switch between `Auto (Spotify + YouTube Music)`, `Spotify Only`, or `YouTube Music Only` from the menu bar.
-- **All-Language Lyrics & Universal Phonetics**
+- **100% Automatic All-Language Lyrics & Universal Phonetics**
+  - Zero language configuration: script detection runs automatically per lyric line.
   - **Latin-Script Languages** (Indonesian, English, Spanish, French, German, Malay, Tagalog, Portuguese, Italian, Turkish, Vietnamese, etc.) render cleanly without redundant phonetic clutter.
   - **Non-Latin Scripts** automatically show word- or character-level romanization above the lyrics using macOS native ICU `CFStringTransform` and `CFStringTokenizer`:
     - **Chinese (Hanzi)** -> Pinyin with tone marks (`kCFStringTransformMandarinLatin`)
     - **Japanese (Kanji / Hiragana / Katakana)** -> Word-level Romaji (`CFStringTokenizer` `ja` + `kCFStringTransformLatinHiragana`)
     - **Korean (Hangul)** -> Revised Romanization (`kCFStringTransformLatinHangul`)
-    - **Arabic / Persian / Urdu** -> Latin transliteration (`kCFStringTransformLatinArabic`)
-    - **Cyrillic (Russian, Ukrainian, etc.)** -> Latin transliteration (`kCFStringTransformLatinCyrillic`)
-    - **Thai** -> Word-segmented Latin romanization (`CFStringTokenizer` `th` + `kCFStringTransformLatinThai`)
-    - **Greek & Hebrew** -> Latin transliteration (`kCFStringTransformLatinGreek`, `kCFStringTransformLatinHebrew`)
-    - **Indic & All Other Scripts** (Devanagari/Hindi, Bengali, Tamil, Telugu, Georgian, Armenian, Khmer, etc.) -> Universal ICU `Any-Latin; Latin-ASCII` transliteration
-  - **Phonetic Modes**: Choose `Auto (Non-Latin -> Latin)`, `All Scripts`, or `Off` from the menu bar.
-- **Three Display Modes**
-  - **Floating**: Translucent frosted-glass HUD overlay (`NSVisualEffectView`), draggable and resizable anywhere on screen.
-  - **Corner**: Compact PiP-style overlay that snaps to the nearest screen corner on drag release.
-  - **Menu Bar**: Live scrolling lyric ticker directly inside the macOS status bar (`CATextLayer`).
+    - **Arabic / Persian / Urdu** -> Latin transliteration
+    - **Cyrillic (Russian, Ukrainian, etc.)** -> Latin transliteration
+    - **Thai** -> Word-segmented Latin romanization (`CFStringTokenizer` `th`)
+    - **Greek, Hebrew, Devanagari/Hindi & All Other Non-Latin Scripts** -> Universal ICU `Any-Latin` transliteration
+- **Five Display Modes (Visible Even Over Full-Screen Apps)**
+  - **Floating Card**: Translucent frosted-glass HUD overlay (`NSVisualEffectView`), draggable and resizable anywhere on screen.
+  - **Corner Card**: Compact PiP-style overlay that snaps to the nearest screen corner on drag release.
+  - **Bottom Subtitle (Movie Style)**: Centered single-line cinema subtitle bar at the bottom of the screen.
+  - **Top Subtitle (Movie Style)**: Centered single-line cinema subtitle bar at the top of the screen.
+  - **Menu Bar Ticker**: Live scrolling lyric ticker directly inside the macOS status bar (`CATextLayer`).
+  - **Full-Screen Support**: Uses `NSPanel` with `.screenSaver` window level, `.canJoinAllSpaces`, `.fullScreenAuxiliary`, and `hidesOnDeactivate = false` so lyrics stay visible even while games, browsers, or video players are in macOS full-screen mode.
 - **Smart Lyrics Lookup ([LRCLIB](https://lrclib.net))**
   - Automatically strips YouTube Music and Spotify suffixes (`- Topic`, `(Official Music Video)`, `(Official Audio)`, `(Lyric Video)`, `[MV]`, `Remastered`, etc.) for high match rates.
   - Supports both time-synced LRC (`syncedLyrics`) and auto-paced `plainLyrics` fallback.

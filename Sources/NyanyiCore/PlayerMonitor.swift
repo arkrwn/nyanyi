@@ -35,8 +35,6 @@ public final class PlayerMonitor: ObservableObject {
     @Published public var isPlaying: Bool = false
     @Published public var activeSourceName: String = ""
 
-    public var sourcePreference: PlayerSourcePreference = .auto
-
     private var pollTimer: Timer?
     private var interpolationTimer: Timer?
     private var lastKnownPosition: Double = 0
@@ -77,10 +75,9 @@ public final class PlayerMonitor: ObservableObject {
     }
 
     private func pollPlayers() {
-        let preference = sourcePreference
         pollQueue.async { [weak self] in
             guard let self else { return }
-            let snapshot = self.resolveActiveSnapshot(preference: preference)
+            let snapshot = self.resolveActiveSnapshot()
 
             DispatchQueue.main.async {
                 guard let snap = snapshot else {
@@ -101,23 +98,16 @@ public final class PlayerMonitor: ObservableObject {
         }
     }
 
-    private func resolveActiveSnapshot(preference: PlayerSourcePreference) -> PlayerSnapshot? {
-        switch preference {
-        case .spotify:
-            return querySpotify()
-        case .youtubeMusic:
-            return queryYouTubeMusic()
-        case .auto:
-            let spotifySnap = querySpotify()
-            if let s = spotifySnap, s.isPlaying {
-                return s
-            }
-            let ytmSnap = queryYouTubeMusic()
-            if let y = ytmSnap, y.isPlaying {
-                return y
-            }
-            return spotifySnap ?? ytmSnap
+    private func resolveActiveSnapshot() -> PlayerSnapshot? {
+        let spotifySnap = querySpotify()
+        if let s = spotifySnap, s.isPlaying {
+            return s
         }
+        let ytmSnap = queryYouTubeMusic()
+        if let y = ytmSnap, y.isPlaying {
+            return y
+        }
+        return spotifySnap ?? ytmSnap
     }
 
     // MARK: - 1. Spotify (macOS Native AppleScript)

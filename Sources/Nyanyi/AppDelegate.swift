@@ -11,8 +11,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var ticker: MenuBarTicker?
     private var cancellables = Set<AnyCancellable>()
     private var modeMenuItems: [DisplayMode: NSMenuItem] = [:]
-    private var sourceMenuItems: [PlayerSourcePreference: NSMenuItem] = [:]
-    private var phoneticMenuItems: [PhoneticMode: NSMenuItem] = [:]
     private var toggleItem: NSMenuItem!
     private var activeSourceItem: NSMenuItem!
 
@@ -31,8 +29,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let menu = NSMenu()
 
-        // Active source status indicator
-        activeSourceItem = NSMenuItem(title: "Source: Waiting for player...", action: nil, keyEquivalent: "")
+        // Active auto-detected player status
+        activeSourceItem = NSMenuItem(
+            title: "Auto-detecting Spotify / YouTube Music...",
+            action: nil,
+            keyEquivalent: ""
+        )
         activeSourceItem.isEnabled = false
         menu.addItem(activeSourceItem)
 
@@ -55,42 +57,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let displayItem = NSMenuItem(title: "Display", action: nil, keyEquivalent: "")
         displayItem.submenu = displayMenu
         menu.addItem(displayItem)
-
-        // Player source submenu
-        let sourceMenu = NSMenu()
-        for source in PlayerSourcePreference.allCases {
-            let item = NSMenuItem(
-                title: source.label,
-                action: #selector(selectSourcePreference(_:)),
-                keyEquivalent: ""
-            )
-            item.target = self
-            item.representedObject = source
-            item.state = (source == displaySettings.sourcePreference) ? .on : .off
-            sourceMenu.addItem(item)
-            sourceMenuItems[source] = item
-        }
-        let sourceItem = NSMenuItem(title: "Player Source", action: nil, keyEquivalent: "")
-        sourceItem.submenu = sourceMenu
-        menu.addItem(sourceItem)
-
-        // Phonetic / Romanization mode submenu
-        let phoneticMenu = NSMenu()
-        for pMode in PhoneticMode.allCases {
-            let item = NSMenuItem(
-                title: pMode.label,
-                action: #selector(selectPhoneticMode(_:)),
-                keyEquivalent: ""
-            )
-            item.target = self
-            item.representedObject = pMode
-            item.state = (pMode == displaySettings.phoneticMode) ? .on : .off
-            phoneticMenu.addItem(item)
-            phoneticMenuItems[pMode] = item
-        }
-        let phoneticItem = NSMenuItem(title: "Phonetics / Romanization", action: nil, keyEquivalent: "")
-        phoneticItem.submenu = phoneticMenu
-        menu.addItem(phoneticItem)
 
         menu.addItem(NSMenuItem.separator())
 
@@ -174,9 +140,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .sink { [weak self] sourceName, title in
                 guard let self else { return }
                 if title.isEmpty || sourceName.isEmpty {
-                    self.activeSourceItem.title = "Source: Waiting for Spotify or YouTube Music..."
+                    self.activeSourceItem.title = "Auto-detecting Spotify / YouTube Music..."
                 } else {
-                    self.activeSourceItem.title = "Source: \(sourceName)"
+                    self.activeSourceItem.title = "Playing from \(sourceName): \(title)"
                 }
             }
             .store(in: &cancellables)
@@ -188,7 +154,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         switch mode {
-        case .floating, .corner:
+        case .floating, .corner, .subtitleBottom, .subtitleTop:
             ticker?.stop()
             setDefaultStatusIcon()
             overlayController.applyDisplayMode(mode)
@@ -214,22 +180,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func selectDisplayMode(_ sender: NSMenuItem) {
         guard let mode = sender.representedObject as? DisplayMode else { return }
         displaySettings.mode = mode
-    }
-
-    @objc private func selectSourcePreference(_ sender: NSMenuItem) {
-        guard let source = sender.representedObject as? PlayerSourcePreference else { return }
-        displaySettings.sourcePreference = source
-        for (s, item) in sourceMenuItems {
-            item.state = (s == source) ? .on : .off
-        }
-    }
-
-    @objc private func selectPhoneticMode(_ sender: NSMenuItem) {
-        guard let pMode = sender.representedObject as? PhoneticMode else { return }
-        displaySettings.phoneticMode = pMode
-        for (pm, item) in phoneticMenuItems {
-            item.state = (pm == pMode) ? .on : .off
-        }
     }
 
     @objc private func toggleOverlay(_ sender: NSMenuItem) {

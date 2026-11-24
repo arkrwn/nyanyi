@@ -7,16 +7,12 @@ public struct LyricLine: Identifiable, Equatable {
     public let annotations: [AnnotatedChar]
     public let hasPhonetics: Bool
 
-    public init(time: Double, text: String, phoneticMode: PhoneticMode = .autoNonLatin) {
+    public init(time: Double, text: String) {
         self.time = time
         self.text = text
-        let chars = PhoneticConverter.annotate(text, mode: phoneticMode)
+        let chars = PhoneticConverter.annotate(text)
         self.annotations = chars
         self.hasPhonetics = chars.contains { !$0.phonetic.isEmpty }
-    }
-
-    public func withPhoneticMode(_ mode: PhoneticMode) -> LyricLine {
-        LyricLine(time: time, text: text, phoneticMode: mode)
     }
 
     public static func == (lhs: LyricLine, rhs: LyricLine) -> Bool {
@@ -51,16 +47,16 @@ public final class LyricsService {
         session = URLSession(configuration: config)
     }
 
-    public func fetchLyrics(track: TrackInfo, phoneticMode: PhoneticMode = .autoNonLatin) async -> [LyricLine] {
+    public func fetchLyrics(track: TrackInfo) async -> [LyricLine] {
         let cleanedTitle = Self.cleanTrackTitle(track.title)
         let cleanedArtist = Self.cleanArtistName(track.artist)
         let cacheKey = "\(cleanedArtist)|\(cleanedTitle)"
 
         if let cached = cache[cacheKey] {
-            return cached.map { $0.withPhoneticMode(phoneticMode) }
+            return cached
         }
 
-        if let lines = await fetchExact(track: track, phoneticMode: phoneticMode), !lines.isEmpty {
+        if let lines = await fetchExact(track: track), !lines.isEmpty {
             cache[cacheKey] = lines
             return lines
         }
@@ -73,18 +69,18 @@ public final class LyricsService {
                 duration: track.duration,
                 sourceName: track.sourceName
             )
-            if let lines = await fetchExact(track: cleanedTrack, phoneticMode: phoneticMode), !lines.isEmpty {
+            if let lines = await fetchExact(track: cleanedTrack), !lines.isEmpty {
                 cache[cacheKey] = lines
                 return lines
             }
         }
 
-        if let lines = await fetchSearch(title: cleanedTitle, artist: cleanedArtist, duration: track.duration, phoneticMode: phoneticMode), !lines.isEmpty {
+        if let lines = await fetchSearch(title: cleanedTitle, artist: cleanedArtist, duration: track.duration), !lines.isEmpty {
             cache[cacheKey] = lines
             return lines
         }
 
-        if let lines = await fetchSearch(title: cleanedTitle, artist: "", duration: track.duration, phoneticMode: phoneticMode), !lines.isEmpty {
+        if let lines = await fetchSearch(title: cleanedTitle, artist: "", duration: track.duration), !lines.isEmpty {
             cache[cacheKey] = lines
             return lines
         }
@@ -92,7 +88,7 @@ public final class LyricsService {
         return []
     }
 
-    private func fetchExact(track: TrackInfo, phoneticMode: PhoneticMode) async -> [LyricLine]? {
+    private func fetchExact(track: TrackInfo) async -> [LyricLine]? {
         var components = URLComponents(string: "\(baseURL)/get")
         var queryItems = [
             URLQueryItem(name: "track_name", value: track.title),
@@ -115,11 +111,11 @@ public final class LyricsService {
             }
             let result = try JSONDecoder().decode(LRCLibResponse.self, from: data)
             if let lrc = result.syncedLyrics, !lrc.isEmpty {
-                return Self.parseLRC(lrc, phoneticMode: phoneticMode)
+                return Self.parseLRC(lrc)
             }
             if let plain = result.plainLyrics, !plain.isEmpty {
                 let dur = result.duration ?? track.duration
-                return Self.parsePlainLyrics(plain, duration: dur, phoneticMode: phoneticMode)
+                return Self.parsePlainLyrics(plain, duration: dur)
             }
             return nil
         } catch {
@@ -127,7 +123,7 @@ public final class LyricsService {
         }
     }
 
-    private func fetchSearch(title: String, artist: String, duration: Double, phoneticMode: PhoneticMode) async -> [LyricLine]? {
+    private func fetchSearch(title: String, artist: String, duration: Double) async -> [LyricLine]? {
         var components = URLComponents(string: "\(baseURL)/search")
         var queryItems = [URLQueryItem(name: "track_name", value: title)]
         if !artist.isEmpty {
@@ -145,12 +141,12 @@ public final class LyricsService {
             let results = try JSONDecoder().decode([LRCLibResponse].self, from: data)
             if let syncedMatch = results.first(where: { ($0.syncedLyrics ?? "").isEmpty == false }),
                let lrc = syncedMatch.syncedLyrics {
-                return Self.parseLRC(lrc, phoneticMode: phoneticMode)
+                return Self.parseLRC(lrc)
             }
             if let plainMatch = results.first(where: { ($0.plainLyrics ?? "").isEmpty == false }),
                let plain = plainMatch.plainLyrics {
                 let dur = plainMatch.duration ?? duration
-                return Self.parsePlainLyrics(plain, duration: dur, phoneticMode: phoneticMode)
+                return Self.parsePlainLyrics(plain, duration: dur)
             }
             return nil
         } catch {
@@ -195,7 +191,7 @@ public final class LyricsService {
 
     // MARK: - LRC & Plain Lyrics Parsers
 
-    public static func parseLRC(_ lrc: String, phoneticMode: PhoneticMode = .autoNonLatin) -> [LyricLine] {
+    public static func parseLRC(_ lrc: String) -> [LyricLine] {
         var lines: [LyricLine] = []
         let pattern = #"\[(\d{1,3}):(\d{2})(?:[.:](\d{1,3}))?\](.*)"#
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
@@ -223,14 +219,14 @@ public final class LyricsService {
             let text = String(trimmed[textRange]).trimmingCharacters(in: .whitespaces)
 
             if !text.isEmpty {
-                lines.append(LyricLine(time: time, text: text, phoneticMode: phoneticMode))
+                lines.append(LyricLine(time: time, text: text))
             }
         }
 
         return lines.sorted { $0.time < $1.time }
     }
 
-    public static func parsePlainLyrics(_ plain: String, duration: Double, phoneticMode: PhoneticMode = .autoNonLatin) -> [LyricLine] {
+    public static func parsePlainLyrics(_ plain: String, duration: Double) -> [LyricLine] {
         let nonEmpty = plain
             .components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespaces) }
@@ -241,7 +237,7 @@ public final class LyricsService {
         let step = max(1.8, effectiveDuration / Double(nonEmpty.count))
 
         return nonEmpty.enumerated().map { idx, lineText in
-            LyricLine(time: Double(idx) * step, text: lineText, phoneticMode: phoneticMode)
+            LyricLine(time: Double(idx) * step, text: lineText)
         }
     }
 }
