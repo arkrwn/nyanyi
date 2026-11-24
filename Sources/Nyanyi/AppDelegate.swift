@@ -11,6 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var ticker: MenuBarTicker?
     private var cancellables = Set<AnyCancellable>()
     private var modeMenuItems: [DisplayMode: NSMenuItem] = [:]
+    private var sizeMenuItems: [OverlaySize: NSMenuItem] = [:]
     private var toggleItem: NSMenuItem!
     private var activeSourceItem: NSMenuItem!
 
@@ -18,7 +19,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupMenuBar()
         setupOverlay()
         setupTicker()
-        observeModeChanges()
+        observeSettingsChanges()
         observePlayerChanges()
         applyMode(displaySettings.mode)
     }
@@ -58,6 +59,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         displayItem.submenu = displayMenu
         menu.addItem(displayItem)
 
+        // Size submenu (Small, Medium, Large)
+        let sizeMenu = NSMenu()
+        for size in OverlaySize.allCases {
+            let item = NSMenuItem(
+                title: size.label,
+                action: #selector(selectOverlaySize(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = size
+            item.state = (size == displaySettings.size) ? .on : .off
+            sizeMenu.addItem(item)
+            sizeMenuItems[size] = item
+        }
+        let sizeItem = NSMenuItem(title: "Size", action: nil, keyEquivalent: "")
+        sizeItem.submenu = sizeMenu
+        menu.addItem(sizeItem)
+
         menu.addItem(NSMenuItem.separator())
 
         toggleItem = NSMenuItem(
@@ -82,12 +101,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func setDefaultStatusIcon() {
         guard let button = statusItem.button else { return }
-        button.image = NSImage(
+        statusItem.length = NSStatusItem.squareLength
+        button.title = ""
+        button.attributedTitle = NSAttributedString(string: "")
+        let img = NSImage(
             systemSymbolName: "music.note",
             accessibilityDescription: "Nyanyi"
         )
-        button.title = ""
-        statusItem.length = NSStatusItem.squareLength
+        img?.isTemplate = true
+        button.image = img
+        button.imagePosition = .imageOnly
     }
 
     private func setupOverlay() {
@@ -99,7 +122,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func setupTicker() {
         guard let button = statusItem.button else { return }
-        ticker = MenuBarTicker(statusButton: button)
+        ticker = MenuBarTicker(statusItem: statusItem, statusButton: button)
 
         viewModel.$lines
             .combineLatest(viewModel.$currentLineIndex, viewModel.$trackTitle, viewModel.$isPlaying)
@@ -112,7 +135,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func updateTickerText(lines: [LyricLine], index: Int?, title: String, isPlaying: Bool) {
-        if title.isEmpty {
+        if title.isEmpty || !isPlaying {
             ticker?.updateText("")
         } else if let idx = index, idx < lines.count {
             ticker?.updateText(lines[idx].text)
@@ -123,7 +146,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func observeModeChanges() {
+    private func observeSettingsChanges() {
         displaySettings.$mode
             .removeDuplicates()
             .receive(on: DispatchQueue.main)
@@ -131,18 +154,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.applyMode(mode)
             }
             .store(in: &cancellables)
+
+        displaySettings.$size
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] size in
+                guard let self else { return }
+                for (s, item) in self.sizeMenuItems {
+                    item.state = (s == size) ? .on : .off
+                }
+                self.overlayController.applyDisplayMode(self.displaySettings.mode)
+            }
+            .store(in: &cancellables)
     }
 
     private func observePlayerChanges() {
         viewModel.$activeSourceName
-            .combineLatest(viewModel.$trackTitle)
+            .combineLatest(viewModel.$trackTitle, viewModel.$isPlaying)
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] sourceName, title in
+            .sink { [weak self] sourceName, title, isPlaying in
                 guard let self else { return }
                 if title.isEmpty || sourceName.isEmpty {
                     self.activeSourceItem.title = "Auto-detecting Spotify / YouTube Music..."
-                } else {
+                } else if isPlaying {
                     self.activeSourceItem.title = "Playing from \(sourceName): \(title)"
+                } else {
+                    self.activeSourceItem.title = "Paused (\(sourceName)): \(title)"
                 }
             }
             .store(in: &cancellables)
@@ -154,19 +191,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         switch mode {
-        case .floating, .corner, .subtitleBottom, .subtitleTop:
+        case .floating, .corner, .subtitle:
             ticker?.stop()
             setDefaultStatusIcon()
             overlayController.applyDisplayMode(mode)
-            if isOverlayVisible {
-                overlayController.showWindow(nil)
-            }
+            overlayController.updateVisibilityForPlayState()
             toggleItem.isHidden = false
 
         case .menuBar:
             overlayController.window?.orderOut(nil)
             toggleItem.isHidden = true
-            statusItem.length = NSStatusItem.variableLength
             ticker?.start()
             updateTickerText(
                 lines: viewModel.lines,
@@ -182,14 +216,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         displaySettings.mode = mode
     }
 
+    @objc private func selectOverlaySize(_ sender: NSMenuItem) {
+        guard let size = sender.representedObject as? OverlaySize else { return }
+        displaySettings.size = size
+    }
+
     @objc private func toggleOverlay(_ sender: NSMenuItem) {
         isOverlayVisible.toggle()
-        if isOverlayVisible {
-            overlayController.showWindow(nil)
-            sender.title = "Hide Overlay"
-        } else {
-            overlayController.window?.orderOut(nil)
-            sender.title = "Show Overlay"
-        }
+        overlayController.isManuallyHidden = !isOverlayVisible
+        sender.title = isOverlayVisible ? "Hide Overlay" : "Show Overlay"
     }
 }

@@ -1,114 +1,99 @@
 import AppKit
-import QuartzCore
 
 final class MenuBarTicker {
+    private weak var statusItem: NSStatusItem?
     private weak var statusButton: NSStatusBarButton?
-    private var containerView: NSView?
-    private var textLayer: CATextLayer?
-    private var currentText: String = ""
+    private var isActive = false
+    private var currentRawText: String = ""
+    private var marqueeOffset: Int = 0
+    private var marqueeTimer: Timer?
 
-    private let maxWidth: CGFloat = 240
-    private let barHeight: CGFloat = 22
-    private let fontSize: CGFloat = 12
-    private let scrollSpeed: CGFloat = 28 // points per second
-    private let pauseDuration: CFTimeInterval = 1.5
+    private let maxVisibleCharacters = 42
 
-    init(statusButton: NSStatusBarButton) {
+    init(statusItem: NSStatusItem, statusButton: NSStatusBarButton) {
+        self.statusItem = statusItem
         self.statusButton = statusButton
     }
 
     func start() {
+        isActive = true
         guard let button = statusButton else { return }
-        button.image = nil
-        button.title = ""
-
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: maxWidth, height: barHeight))
-        container.wantsLayer = true
-        container.layer?.masksToBounds = true
-
-        let tl = CATextLayer()
-        tl.fontSize = fontSize
-        tl.font = NSFont.systemFont(ofSize: fontSize, weight: .medium)
-        tl.foregroundColor = NSColor.labelColor.cgColor
-        tl.contentsScale = NSScreen.main?.backingScaleFactor ?? 2.0
-        tl.alignmentMode = .left
-        tl.isWrapped = false
-
-        container.layer?.addSublayer(tl)
-        button.addSubview(container)
-        button.frame = container.frame
-
-        self.containerView = container
-        self.textLayer = tl
+        statusItem?.length = NSStatusItem.variableLength
+        let img = NSImage(
+            systemSymbolName: "music.note",
+            accessibilityDescription: "Nyanyi"
+        )
+        img?.isTemplate = true
+        button.image = img
+        button.imagePosition = .imageLeading
+        renderCurrentSlice()
     }
 
     func stop() {
-        textLayer?.removeAllAnimations()
-        containerView?.removeFromSuperview()
-        containerView = nil
-        textLayer = nil
-        currentText = ""
+        isActive = false
+        marqueeTimer?.invalidate()
+        marqueeTimer = nil
+        currentRawText = ""
+        marqueeOffset = 0
     }
 
     func updateText(_ text: String) {
-        let display = text.isEmpty ? "♪ Nyanyi" : "♪ \(text)"
-        guard display != currentText else { return }
-        currentText = display
+        guard isActive else { return }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed != currentRawText else { return }
 
-        guard let tl = textLayer, let container = containerView,
-              let button = statusButton else { return }
+        currentRawText = trimmed
+        marqueeOffset = 0
+        marqueeTimer?.invalidate()
+        marqueeTimer = nil
 
-        tl.removeAllAnimations()
+        if trimmed.isEmpty {
+            // Minimize menu bar ticker to compact music note icon when paused or idle
+            guard let button = statusButton else { return }
+            button.title = ""
+            statusItem?.length = NSStatusItem.squareLength
+            button.imagePosition = .imageOnly
+            return
+        }
 
-        let font = NSFont.systemFont(ofSize: fontSize, weight: .medium)
-        let attrs: [NSAttributedString.Key: Any] = [.font: font]
-        let textWidth = ceil((display as NSString).size(withAttributes: attrs).width)
-        let yOffset = (barHeight - fontSize - 3) / 2
+        statusItem?.length = NSStatusItem.variableLength
+        statusButton?.imagePosition = .imageLeading
+        renderCurrentSlice()
 
-        tl.string = display
-        tl.foregroundColor = NSColor.labelColor.cgColor
-
-        let visibleWidth = min(textWidth + 12, maxWidth)
-        container.frame = NSRect(x: 0, y: 0, width: visibleWidth, height: barHeight)
-        button.frame = container.frame
-
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        tl.frame = CGRect(x: 6, y: yOffset, width: textWidth + 20, height: fontSize + 4)
-        CATransaction.commit()
-
-        let overflow = textWidth - (maxWidth - 12)
-        if overflow > 4 {
-            addScrollAnimation(layer: tl, overflow: overflow, yOffset: yOffset)
+        if trimmed.count > maxVisibleCharacters {
+            marqueeTimer = Timer.scheduledTimer(withTimeInterval: 0.22, repeats: true) { [weak self] _ in
+                self?.advanceMarquee()
+            }
         }
     }
 
-    private func addScrollAnimation(layer: CATextLayer, overflow: CGFloat, yOffset: CGFloat) {
-        let scrollTime = CFTimeInterval(overflow / scrollSpeed)
-        let totalDuration = pauseDuration + scrollTime + pauseDuration + scrollTime
+    private func advanceMarquee() {
+        guard isActive, currentRawText.count > maxVisibleCharacters else { return }
+        let padded = currentRawText + "   •   "
+        marqueeOffset = (marqueeOffset + 1) % padded.count
+        renderCurrentSlice()
+    }
 
-        let anim = CAKeyframeAnimation(keyPath: "position.x")
-        let startX = 6 + layer.bounds.width / 2
-        let endX = startX - overflow
+    private func renderCurrentSlice() {
+        guard isActive, let button = statusButton else { return }
 
-        let t0 = 0.0
-        let t1 = pauseDuration / totalDuration
-        let t2 = (pauseDuration + scrollTime) / totalDuration
-        let t3 = (pauseDuration + scrollTime + pauseDuration) / totalDuration
-        let t4 = 1.0
+        let visibleString: String
+        if currentRawText.count <= maxVisibleCharacters {
+            visibleString = " " + currentRawText
+        } else {
+            let padded = Array(currentRawText + "   •   ")
+            var slice: [Character] = []
+            slice.reserveCapacity(maxVisibleCharacters)
+            for i in 0..<maxVisibleCharacters {
+                let idx = (marqueeOffset + i) % padded.count
+                slice.append(padded[idx])
+            }
+            visibleString = " " + String(slice)
+        }
 
-        anim.values = [startX, startX, endX, endX, startX]
-        anim.keyTimes = [
-            NSNumber(value: t0),
-            NSNumber(value: t1),
-            NSNumber(value: t2),
-            NSNumber(value: t3),
-            NSNumber(value: t4)
-        ]
-        anim.duration = totalDuration
-        anim.repeatCount = .infinity
-        anim.isRemovedOnCompletion = false
-
-        layer.add(anim, forKey: "tickerScroll")
+        // Using native NSStatusBarButton title + font allows macOS to automatically invert
+        // text color (white on dark menu bar, black on light menu bar) without ever overlapping!
+        button.font = NSFont.monospacedDigitSystemFont(ofSize: 12.5, weight: .semibold)
+        button.title = visibleString
     }
 }

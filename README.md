@@ -11,11 +11,11 @@ Released under the [MIT License](LICENSE).
 
 ## Features
 
-- **100% Automatic Player Detection (Spotify + YouTube Music on macOS)**
+- **100% Automatic Player Detection (Google Chrome + Spotify on macOS)**
   - Zero manual player selection needed: Nyanyi automatically detects whichever player is actively playing.
-  - **Spotify**: Native macOS `Spotify.app` integration via AppleScript (`tell application "Spotify"`).
-  - **YouTube Music (Web Browsers)**: Automatic tab detection for `music.youtube.com` across **Google Chrome**, **Arc**, **Brave Browser**, **Microsoft Edge**, **Safari**, **Chromium**, and **Vivaldi** (reads track title, artist, album, and `<video>` playback position, with automatic tab-title fallback).
-  - **YouTube Music Desktop App**: Supports `th-ch/youtube-music` / `ytmdesktop` local companion API (`http://127.0.0.1:26538/api/v1/song-info`).
+  - **Google Chrome (Tested & Recommended)**: Automatic tab detection for **YouTube Music** (`music.youtube.com`) and **Spotify Web Player** (`open.spotify.com`) inside Google Chrome.
+  - **Spotify Desktop App**: Native macOS `Spotify.app` integration via AppleScript (`tell application "Spotify"`).
+  - *Note: Currently only **Google Chrome** has been tested and verified for browser playback (`music.youtube.com` & `open.spotify.com`). Other browsers (Safari, Arc, Brave, Edge) are not tested yet.*
 - **100% Automatic All-Language Lyrics & Universal Phonetics**
   - Zero language configuration: script detection runs automatically per lyric line.
   - **Latin-Script Languages** (Indonesian, English, Spanish, French, German, Malay, Tagalog, Portuguese, Italian, Turkish, Vietnamese, etc.) render cleanly without redundant phonetic clutter.
@@ -27,12 +27,11 @@ Released under the [MIT License](LICENSE).
     - **Cyrillic (Russian, Ukrainian, etc.)** -> Latin transliteration
     - **Thai** -> Word-segmented Latin romanization (`CFStringTokenizer` `th`)
     - **Greek, Hebrew, Devanagari/Hindi & All Other Non-Latin Scripts** -> Universal ICU `Any-Latin` transliteration
-- **Five Display Modes (Visible Even Over Full-Screen Apps)**
-  - **Floating Card**: Translucent frosted-glass HUD overlay (`NSVisualEffectView`), draggable and resizable anywhere on screen.
+- **Four Display Modes (Visible Even Over Full-Screen Apps)**
+  - **Floating Card**: Translucent Apple Liquid Glass HUD overlay (`NSVisualEffectView`), draggable and resizable anywhere on screen.
   - **Corner Card**: Compact PiP-style overlay that snaps to the nearest screen corner on drag release.
-  - **Bottom Subtitle (Movie Style)**: Centered single-line cinema subtitle bar at the bottom of the screen.
-  - **Top Subtitle (Movie Style)**: Centered single-line cinema subtitle bar at the top of the screen.
-  - **Menu Bar Ticker**: Live scrolling lyric ticker directly inside the macOS status bar (`CATextLayer`).
+  - **Subtitle (Movie Style)**: Dynamic 2-line Apple Glass cinema subtitle pill that tightly wraps its text and can be dragged freely anywhere on screen (top, center, bottom). Every pixel outside the subtitle pill itself passes clicks directly to the apps behind it.
+  - **Menu Bar Ticker**: Live scrolling lyric ticker directly inside the macOS status bar.
   - **Full-Screen Support**: Uses `NSPanel` with `.screenSaver` window level, `.canJoinAllSpaces`, `.fullScreenAuxiliary`, and `hidesOnDeactivate = false` so lyrics stay visible even while games, browsers, or video players are in macOS full-screen mode.
 - **Smart Lyrics Lookup ([LRCLIB](https://lrclib.net))**
   - Automatically strips YouTube Music and Spotify suffixes (`- Topic`, `(Official Music Video)`, `(Official Audio)`, `(Lyric Video)`, `[MV]`, `Remastered`, etc.) for high match rates.
@@ -72,15 +71,15 @@ cp -R Nyanyi.app /Applications/
 
 ---
 
-## YouTube Music Browser Setup (Optional for Exact Sub-Second Sync)
+## Required Google Chrome Setup (YouTube Music & Spotify Web)
 
-Nyanyi detects `music.youtube.com` tabs in Chrome, Arc, Brave, Edge, and Safari out of the box:
+> **Important**: Currently, browser playback is **only tested and supported on Google Chrome** (`music.youtube.com` and `open.spotify.com`). Other browsers have not been tested yet.
 
-- **Default (Zero Setup)**: Reads the song title and artist from the browser tab title and advances lyrics smoothly.
-- **Exact Sub-Second `<video>` Timestamp Sync**:
-  - **Chrome / Brave / Arc / Edge**: In the browser menu bar, enable **View -> Developer -> Allow JavaScript from Apple Events**.
-  - **Safari**: Enable **Develop -> Allow JavaScript from Apple Events**.
-  - **YouTube Music Desktop App (`th-ch/youtube-music`)**: Enable the **API Server** plugin on default port `26538` (no authentication required for read-only `/api/v1/song-info`).
+For **Nyanyi** to read the active song metadata (`navigator.mediaSession.metadata`), detect track changes automatically, and sync exact sub-second playback timestamps from **Google Chrome**:
+
+1. Open **Google Chrome** on your Mac.
+2. In the macOS top menu bar, click **View -> Developer -> Allow JavaScript from Apple Events** (make sure it has a checkmark ✓).
+3. Play any song on [YouTube Music](https://music.youtube.com) or [Spotify Web Player](https://open.spotify.com) in Google Chrome.
 
 ---
 

@@ -4,6 +4,7 @@ import Combine
 public final class LyricsViewModel: ObservableObject {
     @Published public var lines: [LyricLine] = []
     @Published public var currentLineIndex: Int?
+    @Published public var lineProgress: Double = 0
     @Published public var trackTitle: String = ""
     @Published public var artist: String = ""
     @Published public var activeSourceName: String = ""
@@ -54,17 +55,36 @@ public final class LyricsViewModel: ObservableObject {
             return
         }
 
-        trackTitle = track.title
-        artist = track.artist
+        let isSameSong = (trackTitle == track.title && artist == track.artist && !trackTitle.isEmpty)
         activeSourceName = track.sourceName
-        lines = []
-        currentLineIndex = nil
-        isLoading = true
+
+        if !isSameSong {
+            trackTitle = track.title
+            artist = track.artist
+            lines = []
+            currentLineIndex = nil
+            isLoading = true
+        } else if !lines.isEmpty && track.duration <= 0 {
+            return
+        }
 
         fetchTask = Task { @MainActor [weak self] in
-            let fetched = await LyricsService.shared.fetchLyrics(track: track)
+            var fetched = await LyricsService.shared.fetchLyrics(track: track)
             guard !Task.isCancelled, let self = self else { return }
-            self.lines = fetched
+
+            // If external databases (LRCLIB, NetEase, Lyrics.ovh) have no entry for this song
+            // (for example local/indie YouTube Music tracks like "Josjis - Waru Leaf"),
+            // extract synced captions or inline lyrics directly from the active Google Chrome tab!
+            if fetched.isEmpty {
+                let inline = self.playerMonitor.fetchBrowserInlineLyrics()
+                if !inline.isEmpty {
+                    fetched = inline
+                }
+            }
+
+            if !fetched.isEmpty || self.lines.isEmpty {
+                self.lines = fetched
+            }
             self.isLoading = false
             self.updateActiveLine(for: self.playerMonitor.playerPosition)
         }
@@ -73,12 +93,13 @@ public final class LyricsViewModel: ObservableObject {
     public func updateActiveLine(for position: Double) {
         guard !lines.isEmpty else {
             if currentLineIndex != nil { currentLineIndex = nil }
+            if lineProgress != 0 { lineProgress = 0 }
             return
         }
 
         var activeIndex: Int?
         for (i, line) in lines.enumerated() {
-            if line.time <= position + 0.15 {
+            if line.time <= position + 0.03 {
                 activeIndex = i
             } else {
                 break
@@ -87,6 +108,20 @@ public final class LyricsViewModel: ObservableObject {
 
         if activeIndex != currentLineIndex {
             currentLineIndex = activeIndex
+        }
+
+        if let idx = activeIndex {
+            let startTime = lines[idx].time
+            let endTime: Double
+            if idx + 1 < lines.count {
+                endTime = max(startTime + 0.5, lines[idx + 1].time)
+            } else {
+                endTime = startTime + 4.0
+            }
+            let rawProgress = (position - startTime) / (endTime - startTime)
+            lineProgress = min(max(rawProgress, 0.0), 1.0)
+        } else {
+            lineProgress = 0
         }
     }
 }

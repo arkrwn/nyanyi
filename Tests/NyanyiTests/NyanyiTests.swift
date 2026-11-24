@@ -61,12 +61,15 @@ final class NyanyiTests: XCTestCase {
     // MARK: - Display Modes (Including Movie Subtitle Top & Bottom)
 
     func testDisplayModesIncludeMovieSubtitles() {
-        XCTAssertTrue(DisplayMode.subtitleBottom.isSubtitleStyle)
-        XCTAssertTrue(DisplayMode.subtitleTop.isSubtitleStyle)
+        XCTAssertTrue(DisplayMode.subtitle.isSubtitleStyle)
         XCTAssertFalse(DisplayMode.floating.isSubtitleStyle)
         XCTAssertFalse(DisplayMode.corner.isSubtitleStyle)
         XCTAssertFalse(DisplayMode.menuBar.isSubtitleStyle)
-        XCTAssertEqual(DisplayMode.allCases.count, 5)
+        XCTAssertEqual(DisplayMode.allCases.count, 4)
+
+        XCTAssertEqual(OverlaySize.allCases.count, 3)
+        XCTAssertLessThan(OverlaySize.small.scaleFactor, OverlaySize.medium.scaleFactor)
+        XCTAssertGreaterThan(OverlaySize.large.scaleFactor, OverlaySize.medium.scaleFactor)
     }
 
     // MARK: - LRC & Plain Lyrics Parsing
@@ -78,16 +81,30 @@ final class NyanyiTests: XCTestCase {
         [01:02.100] Baris ketiga
         """
         let lines = LyricsService.parseLRC(sampleLRC)
-        XCTAssertEqual(lines.count, 3)
-        XCTAssertEqual(lines[0].time, 12.50, accuracy: 0.01)
-        XCTAssertEqual(lines[0].text, "Baris pertama lagu")
-        XCTAssertFalse(lines[0].hasPhonetics)
+        // Expected:
+        // 0: [00:00.00] ♪ Music Only ♪ (auto-inserted intro because first line is at 12.50s >= 4.0s)
+        // 1: [00:12.50] Baris pertama lagu
+        // 2: [00:18.25] 你好世界
+        // 3: [00:22.05] ♪ Music Only ♪ (auto-inserted interlude because gap between 18.25s and 62.10s is >= 11.0s)
+        // 4: [01:02.100] Baris ketiga
+        XCTAssertEqual(lines.count, 5)
+        XCTAssertTrue(lines[0].isInstrumental)
+        XCTAssertEqual(lines[0].text, LyricLine.instrumentalLabel)
 
-        XCTAssertEqual(lines[1].time, 18.25, accuracy: 0.01)
-        XCTAssertEqual(lines[1].text, "你好世界")
-        XCTAssertTrue(lines[1].hasPhonetics)
+        XCTAssertEqual(lines[1].time, 12.50, accuracy: 0.01)
+        XCTAssertEqual(lines[1].text, "Baris pertama lagu")
+        XCTAssertFalse(lines[1].hasPhonetics)
+        XCTAssertFalse(lines[1].isInstrumental)
 
-        XCTAssertEqual(lines[2].time, 62.10, accuracy: 0.01)
+        XCTAssertEqual(lines[2].time, 18.25, accuracy: 0.01)
+        XCTAssertEqual(lines[2].text, "你好世界")
+        XCTAssertTrue(lines[2].hasPhonetics)
+
+        XCTAssertTrue(lines[3].isInstrumental)
+        XCTAssertEqual(lines[3].text, LyricLine.instrumentalLabel)
+
+        XCTAssertEqual(lines[4].time, 62.10, accuracy: 0.01)
+        XCTAssertEqual(lines[4].text, "Baris ketiga")
     }
 
     func testParsePlainLyricsAutoPacing() {
@@ -161,6 +178,25 @@ final class NyanyiTests: XCTestCase {
         let parsed = PlayerMonitor.parseTabTitle("▶ Sial - Mahalini - YouTube Music")
         XCTAssertEqual(parsed.title, "Sial")
         XCTAssertEqual(parsed.artist, "Mahalini")
+
+        let bulletParsed = PlayerMonitor.parseTabTitle("Hati-Hati di Jalan • Tulus - YouTube Music")
+        XCTAssertEqual(bulletParsed.title, "Hati-Hati di Jalan")
+        XCTAssertEqual(bulletParsed.artist, "Tulus")
+    }
+
+    func testParseSpotifyWebTabTitleAndJSOutput() {
+        let tabParsed = PlayerMonitor.parseSpotifyWebTabTitle("Evaluasi • Hindia | Spotify")
+        XCTAssertEqual(tabParsed.title, "Evaluasi")
+        XCTAssertEqual(tabParsed.artist, "Hindia")
+
+        let monitor = PlayerMonitor(autoStart: false)
+        let raw = "SPOTIFY_JS|||playing|||Evaluasi|||Hindia|||Menari Dengan Bayangan|||195.0|||42.0|||Evaluasi • Hindia"
+        let snap = monitor.parseBrowserMusicResult(raw)
+        XCTAssertNotNil(snap)
+        XCTAssertEqual(snap?.track.title, "Evaluasi")
+        XCTAssertEqual(snap?.track.artist, "Hindia")
+        XCTAssertEqual(snap?.track.sourceName, "Spotify Web")
+        XCTAssertEqual(snap?.position ?? 0, 42.0, accuracy: 0.01)
     }
 
     func testParseYouTubeMusicDesktopCompanionJSON() {
